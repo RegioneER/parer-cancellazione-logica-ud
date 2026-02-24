@@ -1,0 +1,141 @@
+quarkus:
+  application:
+    name: "Cancellazione logica Unità Documentarie (Soft Delete)"
+  devservices:
+    enabled: false   
+  #package:
+    #type: "uber-jar"
+  http:
+    root-path: "/cancellazione-logica-ud"
+    body:
+      handle-file-uploads: false
+      preallocate-body-buffer: true
+    auth:
+      basic: true		
+      policy:
+        role-api-policy:
+          roles-allowed: "admin,versatore"
+        role-internal-policy:
+          roles-allowed: "admin"       
+      permission:
+        api:
+          paths: "api/oauth2/*"
+          policy: "role-api-policy"
+        internal:
+          paths: "admin/*,status"
+          policy: "role-internal-policy"
+        all: 
+          paths: "api/public/*"
+          policy: "permit"
+          methods: "POST,GET"          
+  security: 
+    users:
+      embedded:
+        enabled: true		   		  
+  oidc:
+    enabled: true
+    discovery-enabled: false
+  transaction-manager:
+    default-transaction-timeout: "43200s" # impostato timeout a dodici ore rispetto il default (60S) per evitare problematiche di resultset chiusi prima del tempo
+  vertx:
+    max-worker-execute-time: "600s" # impostato timeout a 10 minuti rispetto il default (60S) per permettere operazioni bloccanti nei job schedulati
+  datasource: 
+    db-kind: "oracle"
+    jdbc:
+      driver: "oracle.jdbc.driver.OracleDriver"
+      acquisition-timeout: 30s # Default è 5s
+  hibernate-orm:
+    dialect: "org.hibernate.dialect.OracleDialect"
+    packages: "it.eng.parer.soft.delete.jpa"
+  smallrye-openapi:
+    info-title: "Cancellazione Logica Unità Doc API" 
+  swagger-ui:
+    always-include: true
+    validator-url: "none"
+  naming:
+    enable-jndi: true
+  #logging 
+  log:
+    level: INFO
+    console:
+      json: false
+      format: "%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%c] (%t) %X{log_uuid} %s%e%n"
+  index-dependency:
+    quarkuslogger:
+      group-id: "it.eng.parer"
+      artifact-id: "quarkus-custom-log-handlers"
+# custom
+parer:
+ soft:
+  delete:
+    env:
+      propstoskip: "(?i).*password.*|(?i).*username.*|(?i).*email.*|(?i).*maven.*|(?i).*user.*" 
+# Profili (attivalibili con -Dquarkus-profile=)
+# Dev mode = quarkus:dev (necessario esplicitare -DQUARKUS_DATASOURCE_USER=<user> -DQUARKUS_DATASOURCE_PASSWORD=<password db>)
+"%dev":
+  quarkus:
+    http:
+      limits:
+        max-body-size: 30M
+        max-form-attribute-size: 30M
+      port: 10012
+    shutdown:
+      timeout: "PT1S"
+    datasource: 
+      jdbc:
+        max-size: 30 # Default è 20
+        min-size: 5 # Default è 0
+        acquisition-timeout: 45s # Default è 5s
+    hibernate-orm:
+      validate-in-dev-mode: false
+      log:
+        sql: false
+        format-sql: false
+    security:
+      users:
+        embedded:
+          plain-text: true
+          users:
+            #admin: "80589461aa1b0e9b7888f936787bf9bc" # echo -n admin:Quarkus:password | md5 
+            admin: "password"
+          roles: 
+            admin: "admin"
+    log:
+      #level: ALL
+      category:
+        it.eng.parer.soft.delete:
+          level: "DEBUG"
+        #org.hibernate:
+          #level: "DEBUG"
+    # Configurazione Infinispan
+    infinispan-embedded:
+      xml-config: infinispan-config.xml
+      clustered: true       
+# test datasource configuration
+"%test":
+  quarkus:
+    datasource: 
+      db-kind: "oracle"
+      jdbc:
+        driver: "oracle.jdbc.driver.OracleDriver"
+    hibernate-orm:
+      log:
+       sql: true
+       format-sql: false
+    scheduler:
+      enabled: false
+"%h2":
+  quarkus:
+    datasource:
+      db-kind: "h2"
+      jdbc:
+        driver: "org.h2.Driver"
+        url: "jdbc:h2:tcp://localhost/mem:test;DB_CLOSE_DELAY=-1"
+    hibernate-orm:
+      dialect: "org.hibernate.dialect.H2Dialect"
+      database:
+        generation:
+          create-schemas: true
+      log:
+        sql: true
+        format-sql: false

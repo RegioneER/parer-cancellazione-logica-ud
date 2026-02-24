@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  elementFormDefault="qualified">
+  
+  <!--  -->
+  <xs:complexType  name="EsitoRichiestaType">
+    <xs:sequence>
+      <xs:element name="CodiceEsito" type="CodiceEsitoType"/>
+      <xs:element name="CodiceErrore" type="xs:string" minOccurs="0"/>
+      <xs:element name="MessaggioErrore" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="CodiceEsitoType">
+    <xs:restriction base="xs:NMTOKEN">
+      <xs:enumeration value="POSITIVO"/>
+      <xs:enumeration value="NEGATIVO"/>
+      <xs:enumeration value="WARNING"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+
+  <!--  -->
+  <xs:complexType  name="SCVersatoreType">
+    <xs:sequence>
+      <xs:element name="Ambiente" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Ente" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Struttura" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="UserID" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Utente" type="StringNVMax100Type" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+
+  <!--  -->
+  <xs:complexType name="ECRichiestaType">
+    <xs:sequence>
+      <xs:element name="Descrizione" type="StringNVMax254Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Motivazione" type="StringNVMax2000Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="TipoCancellazione" minOccurs="0" maxOccurs="1" type="ECTipoCancellazioneType" default="CAMPIONE"/>
+      <xs:element name="NumeroRichiesteDiCancellazione" type="xs:nonNegativeInteger" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="NumeroRichiesteDiCancellazioneNonElaborabili" type="xs:nonNegativeInteger" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+<!--  -->
+  <xs:group name="SharedElements">
+    <xs:sequence>
+      <xs:element name="TipoRichiesta" minOccurs="1" maxOccurs="1" type="ECTipoRichiestaType" default="UNITA' DOCUMENTARIA"/>
+    </xs:sequence>
+  </xs:group>
+  <xs:group name="UnitaDocElements">
+    <xs:sequence>
+      <xs:element name="TipoRegistro" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Numero" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="Anno" type="IntMax4DgtType" minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:group>
+  <xs:group name="RichiestaSacerElements">
+    <xs:sequence>
+        <xs:element name="IDRichiestaSacer" type="xs:nonNegativeInteger" minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:group>
+
+  <!--  -->
+  <xs:complexType name="ECRichiestaDiCancellazioneType">     
+    <xs:sequence>
+      <xs:group ref="SharedElements"/>
+      <xs:choice>
+          <xs:group ref="UnitaDocElements"/>
+          <xs:group ref="RichiestaSacerElements"/>
+      </xs:choice>
+      <xs:element name="Stato" type="StringNVMax100Type" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="ErroriRilevati" type="xs:string" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  
+
+
+
+                                  <!-- TIPI DATO GENERICI -->
+
+
+  <!--  -->
+  <xs:simpleType name="StringNVMax100Type">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!--  -->
+  <xs:simpleType name="StringNVMax200Type">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="200"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!--  -->
+  <xs:simpleType name="StringNVMax254Type">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="254"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!--  -->
+  <xs:simpleType name="StringNVMax2000Type">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="1024"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!--  -->
+  <xs:simpleType name="IntMax4DgtType">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="9999"/>
+    </xs:restriction>
+  </xs:simpleType>
+  
+  <!--  -->
+  <xs:simpleType name="ECTipoRichiestaType">
+    <xs:restriction base="xs:string">
+        <xs:enumeration value="UNITA' DOCUMENTARIA"/>
+        <xs:enumeration value="ANNULLAMENTO VERSAMENTO"/>
+        <xs:enumeration value="RESTITUZIONE ARCHIVIO"/>
+        <xs:enumeration value="SCARTO ARCHIVISTICO"/>
+    </xs:restriction>
+  </xs:simpleType>
+ 
+  <!--  -->
+  <xs:simpleType name="ECTipoCancellazioneType">
+    <xs:restriction base="xs:string">
+        <xs:enumeration value="COMPLETA"/>
+        <xs:enumeration value="CAMPIONE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+                                  <!-- ELEMENTI -->
+  <!--  -->
+  <xs:element name="EsitoRichiestaCancellazioneLogica">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="VersioneXmlEsito" type="StringNVMax100Type" minOccurs="1" maxOccurs="1"/>
+        <xs:element name="VersioneXmlRichiesta" type="StringNVMax100Type" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="DataRichiesta" type="xs:dateTime" minOccurs="1" maxOccurs="1"/>
+        <xs:element name="EsitoRichiesta" type="EsitoRichiestaType" minOccurs="1" maxOccurs="1"/>
+        <xs:element name="Versatore" type="SCVersatoreType" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="Richiesta" type="ECRichiestaType" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="RichiesteDiCancellazione" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="RichiestaDiCancellazione" type="ECRichiestaDiCancellazioneType" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

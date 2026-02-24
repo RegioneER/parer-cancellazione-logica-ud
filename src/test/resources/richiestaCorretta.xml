@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RichiestaCancellazioneLogica xsi:noNamespaceSchemaLocation="schema.xsd"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<VersioneXmlRichiesta>1.0</VersioneXmlRichiesta>
+	<Versatore>
+		<Ambiente>PARER_PROVA</Ambiente>
+		<Ente>ente_test</Ente>
+		<Struttura>PARER_TEST</Struttura>
+		<UserID>admin_generale</UserID>
+	</Versatore>
+	<Richiesta>
+		<Descrizione>Test</Descrizione>
+		<Motivazione>string</Motivazione>
+		<TipoCancellazione>COMPLETA</TipoCancellazione>
+	</Richiesta>
+	<RichiesteDiCancellazione>
+		<RichiestaDiCancellazione>
+			<TipoRichiesta>UNITA' DOCUMENTARIA</TipoRichiesta>
+			<TipoRegistro>DOCUMENTI</TipoRegistro>
+			<Numero>17086_66</Numero>
+			<Anno>2000</Anno>
+		</RichiestaDiCancellazione>
+	</RichiesteDiCancellazione>
+</RichiestaCancellazioneLogica>

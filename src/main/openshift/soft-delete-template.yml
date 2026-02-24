@@ -1,0 +1,455 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  app: cancellazione-logica-ud
+  template: cancellazione-logica-ud-quarkus
+metadata:
+  annotations:
+    description: |-
+      Template microservizio cancellazione logica UD (vedere https://gitlab.regione.emilia-romagna.it/parer/ocp/cancellazione-logica-ud.git)
+    iconClass: icon-quarkus
+    openshift.io/display-name: Microservice Cancellazione Logica UD
+    openshift.io/documentation-url: https://gitlab.regione.emilia-romagna.it/parer/ocp/cancellazione-logica-ud
+    openshift.io/long-description: Il template fornisce la creazione del microservizio cancellazione logica UD
+    openshift.io.provider-display-name: Parer (Regione Emilia Romagna)
+    openshift.io.support-url: https://gitlab.regione.emilia-romagna.it/parer
+    tags: quarkus,cancellazione-logica
+    template.openshift.io/bindable: "false"
+  name: cancellazione-logica-ud-quarkus
+objects:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: cancellazione-logica-ud-secrets 
+    labels:
+      app: cancellazione-logica-ud    
+  stringData:
+    QUARKUS_OIDC_CLIENT_ID: ${CLIENT_ID}
+    QUARKUS_OIDC_CREDENTIALS_CLIENT_SECRET_VALUE: ${CLIENT_SECRET}
+    QUARKUS_OIDC_AUTH_SERVER_URL: ${AUTH_SERVER_URL}
+    QUARKUS_OIDC_INTROSPECTION_PATH: ${INTROSPECTION_PATH}
+    QUARKUS_DATASOURCE_JDBC_URL: ${DATABASE_URL}
+    QUARKUS_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD}
+    QUARKUS_DATASOURCE_USERNAME: ${DATABASE_USER}
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  data:
+    .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5lbnRlLnJlZ2lvbmUuZW1yLml0L3BhcmVyLyI6eyJ1c2VybmFtZSI6Im9rZF9kZXBsb3kiLCJwYXNzd29yZCI6IlhUWkJ5V1lBQnZ4UVVMOFdreHFxIiwiZW1haWwiOiJnaXRsYWJAZGVwbG95LmxvY2FsIn19fQ==
+  metadata:
+    name: gitlab-registry-token
+  type: kubernetes.io/dockerconfigjson
+- apiVersion: v1
+  kind: ConfigMap
+  data:
+    FQDN_NAME: ${FQDN_NAME}
+    ROOT_PATH: ${ROOT_PATH}
+    WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE}
+    WORKER_POLL_ENABLED: ${WORKER_POLL_ENABLED}
+    WORKER_CLAIM_TIMEOUT_MINUTES: ${WORKER_CLAIM_TIMEOUT_MINUTES}
+    KAFKA_VERIFY_BATCH_SIZE: ${KAFKA_VERIFY_BATCH_SIZE}
+    KAFKA_VERIFY_TIMEOUT_MINUTES: ${KAFKA_VERIFY_TIMEOUT_MINUTES}
+    application.yaml: |-
+      "%${PROFILE}":
+        quarkus:
+          #(locked build time)
+          #ssl:
+          #native: "true"
+          http:
+            port: 8080
+            test-port: 0
+          shutdown:
+            timeout: "PT30S"
+          datasource:
+            jdbc:
+              max-size: 30 # Default è 20
+              min-size: 5 # Default è 0
+              acquisition-timeout: 45s # Default è 5s
+          hibernate-orm:
+            dialect: "org.hibernate.dialect.Oracle10gDialect"
+            database:
+              generation: "none"
+          security:
+            users:
+              embedded:
+                #plain-text: true
+                users:
+                  admin: "db0df53c9894a31b7defe5489028f236"
+                roles: 
+                  admin: "admin"            
+          #logging
+          log:
+            level: INFO
+            console:
+              json: false
+              format: "%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%c] (%t) %X{log_uuid} %s%E%n"
+            category:
+              it.eng.parer.soft.delete:
+                level: "INFO"
+          # Configurazione Infinispan
+          infinispan-embedded:
+            xml-config: "/deployments/config/infinispan-config.xml"  # Percorso assoluto
+            clustered: true     
+        # custom logger (single line throw)
+        parer:
+          quarkus:
+            config:
+              singleline-message:
+                enabled: true
+    infinispan-config.xml: |-
+      <?xml version="1.0" encoding="UTF-8"?>
+      <infinispan
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="urn:infinispan:config:15.0 http://www.infinispan.org/schemas/infinispan-config-15.0.xsd"
+          xmlns="urn:infinispan:config:15.0">
+        
+        <cache-container default-cache="default">
+          <!-- Usa UDP in locale e kubernetes in produzione -->
+          <transport cluster="timestamp-cluster"
+                    stack="kubernetes"
+                    node-name="${infinispan-embedded.node-name}"/>
+          
+          <!-- Cache di default vuota -->
+          <local-cache name="default" />
+        </cache-container>
+      </infinispan>
+  metadata:
+    labels:
+      app: cancellazione-logica-ud
+    name: cancellazione-logica-ud-config
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: cancellazione-logica-ud
+      expose: "true"
+    name: cancellazione-logica-ud-svc
+  spec:
+    ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: cancellazione-logica-ud
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Route
+  metadata:
+    annotations:
+      haproxy.router.openshift.io/timeout: 10m
+    labels:
+      app: cancellazione-logica-ud
+      expose: "true"
+    name: cancellazione-logica-ud-fqdn-path
+  spec:
+    host: ${FQDN_NAME}
+    path: ${ROOT_PATH}
+    port:
+      targetPort: http
+    tls:
+      termination: edge
+    to:
+      kind: Service
+      name: cancellazione-logica-ud-svc
+      weight: 100
+    wildcardPolicy: None
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: cancellazione-logica-ud-headless-svc
+    labels:
+      app: cancellazione-logica-ud
+      infinispan-cluster: "true"
+  spec:
+    clusterIP: None  
+    ports:
+    - name: jgroups
+      port: 7800
+      protocol: TCP
+      targetPort: 7800
+    selector:
+      app: cancellazione-logica-ud
+    publishNotReadyAddresses: true # Importante per cluster Infinispan
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: cancellazione-logica-ud
+      gl_log_application: cancellazione-logica-ud
+      gl_tags: ${AMBIENTE}
+      group: it.eng.parer
+    name: cancellazione-logica-ud
+  spec:
+    replicas: 2
+    selector:
+      matchLabels:
+        app: cancellazione-logica-ud
+    strategy:
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi        
+        requests:
+          cpu: 300m
+          memory: 500Mi
+        maxUnavailable: 25%
+        timeoutSeconds: 3600
+        updatePeriodSeconds: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: cancellazione-logica-ud
+          gl_log_application: cancellazione-logica-ud
+          gl_tags: ${AMBIENTE}
+          group: it.eng.parer
+      spec:
+        containers:
+        - env:
+          - name: FQDN_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: FQDN_NAME
+          - name: ROOT_PATH
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: ROOT_PATH
+          - name: WORKER_BATCH_SIZE
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: WORKER_BATCH_SIZE
+          - name: WORKER_POLL_ENABLED
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: WORKER_POLL_ENABLED
+          - name: WORKER_CLAIM_TIMEOUT_MINUTES
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: WORKER_CLAIM_TIMEOUT_MINUTES
+          - name: KAFKA_VERIFY_BATCH_SIZE
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: KAFKA_VERIFY_BATCH_SIZE
+          - name: KAFKA_VERIFY_TIMEOUT_MINUTES
+            valueFrom:
+              configMapKeyRef:
+                name: cancellazione-logica-ud-config
+                key: KAFKA_VERIFY_TIMEOUT_MINUTES
+          - name: QUARKUS_DATASOURCE_USERNAME
+            valueFrom:
+              secretKeyRef:
+                key:  QUARKUS_DATASOURCE_USERNAME
+                name: cancellazione-logica-ud-secrets
+          - name: QUARKUS_DATASOURCE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: QUARKUS_DATASOURCE_PASSWORD
+                name: cancellazione-logica-ud-secrets
+          - name: KUBERNETES_NAMESPACE
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+          - name: HOSTNAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: JAVA_OPTS_APPEND
+            value: >- 
+              -Dfile.encoding=UTF-8 -Dquarkus.profile=${PROFILE}
+              -XX:+UnlockExperimentalVMOptions
+              -XX:+UseContainerSupport
+              -Dsun.zip.disableMemoryMapping=true
+              -Dcom.sun.management.jmxremote=true
+              -Dcom.sun.management.jmxremote.port=3000
+              -Dcom.sun.management.jmxremote.rmi.port=3001
+              -Djava.rmi.server.hostname=127.0.0.1
+              -Dcom.sun.management.jmxremote.authenticate=false
+              -Dcom.sun.management.jmxremote.ssl=false
+              -Djava.net.preferIPv4Stack=true 
+              -Djgroups.bind.address=SITE_LOCAL 
+              -Djgroups.join_timeout=15000
+              -Dinfinispan-embedded.node-name=$(HOSTNAME)
+              -Djgroups.dns.query=cancellazione-logica-ud-headless-svc.$(KUBERNETES_NAMESPACE).svc.cluster.local
+          - name: JAVA_MAX_MEM_RATIO
+            value: "90"
+          - name: JAVA_INITIAL_MEM_RATIO
+            value: "40"
+          - name: TZ
+            value: Europe/Rome
+          - name: QUARKUS_OIDC_CREDENTIALS_CLIENT_SECRET_VALUE
+            valueFrom:
+              secretKeyRef:
+                key: QUARKUS_OIDC_CREDENTIALS_CLIENT_SECRET_VALUE
+                name: cancellazione-logica-ud-secrets
+          - name: QUARKUS_OIDC_AUTH_SERVER_URL
+            valueFrom:
+              secretKeyRef:
+                key: QUARKUS_OIDC_AUTH_SERVER_URL
+                name: cancellazione-logica-ud-secrets
+          - name: QUARKUS_OIDC_INTROSPECTION_PATH
+            valueFrom:
+              secretKeyRef:
+                key: QUARKUS_OIDC_INTROSPECTION_PATH
+                name: cancellazione-logica-ud-secrets                
+          - name: QUARKUS_OIDC_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: QUARKUS_OIDC_CLIENT_ID
+                name: cancellazione-logica-ud-secrets
+          - name: QUARKUS_DATASOURCE_JDBC_URL
+            valueFrom:
+              secretKeyRef:
+                key:  QUARKUS_DATASOURCE_JDBC_URL
+                name: cancellazione-logica-ud-secrets
+          image: ${IMGTAG}
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /cancellazione-logica-ud/q/health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 180
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 180
+          name: cancellazione-logica-ud
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          - containerPort: 8443
+            protocol: TCP
+          - name: jgroups
+            containerPort: 7800
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /cancellazione-logica-ud/q/health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 180
+          resources:
+            limits:
+              cpu: 500m
+              memory: 3Gi
+            requests:
+              cpu: 300m
+              memory: 1Gi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /deployments/config
+            name: cancellazione-logica-ud-config
+            readOnly: true
+        dnsPolicy: ClusterFirst
+        imagePullSecrets:
+        - name: gitlab-pub-registry-token
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - configMap:
+            defaultMode: 420
+            name: cancellazione-logica-ud-config
+          name: cancellazione-logica-ud-config
+    test: false
+    triggers:
+    - type: ConfigChange
+parameters:
+- description: Nome dal tag dell'immagine da utilizzare (default latest)
+  displayName: Nome immagine
+  name: IMGTAG
+  required: false
+  value: registry.regione.emilia-romagna.it/parer/ocp/cancellazione-logica-ud:latest
+- description: Nome dell'ambiente o namespace (e.g. snap/test/pre/prod)
+  displayName: ambiente
+  name: AMBIENTE
+  required: false
+  value: snap
+- description: Nome profilo quarkus
+  displayName: Nome profilo quarkus
+  name: PROFILE
+  required: true  
+- description: Client id (configurato su WSO2 / Keycloack per autenticazione OIDC/OAUTH2)
+  displayName: Client id
+  name: CLIENT_ID
+  required: false
+  value: parer-api  
+- description: Client secrets (configurato su WSO2 / Keycloack per autenticazione OIDC/OAUTH2)
+  displayName: Client secrets
+  name: CLIENT_SECRET
+  required: true
+- description: Host servizio di introspection token (Keycloack e.g. https://sso-parer-test.regione.emilia-romagna.it/auth/realms/Parer)
+  displayName: Host servizio di introspection token
+  name: AUTH_SERVER_URL
+  required: true
+- description: Introspect path per servizio di introspection token (Keycloack e.g. /protocol/openid-connect/token/introspect)
+  displayName: Introspect path per servizio di introspection token
+  name: INTROSPECTION_PATH
+  required: false
+  value: /protocol/openid-connect/token/introspect    
+- description: URL per accesso db
+  displayName: URL per accesso db
+  name: DATABASE_URL
+  required: true  
+- description: Nome utente per accesso db
+  displayName: Nome utente per accesso db
+  name: DATABASE_USER
+  required: true
+- description: Password per accesso db
+  displayName: Password per accesso db
+  name: DATABASE_PASSWORD
+  required: true
+- description: FQDN_NAME
+  displayName: FQDN_NAME
+  required: false
+  name: FQDN_NAME
+  value: ocp-snap.apps.test-parercaas.ente.regione.emr.it  
+- description: ROOT_PATH 
+  displayName: ROOT_PATH
+  required: false
+  name: ROOT_PATH
+  value: /cancellazione-logica-ud
+- description: Numero massimo di item che ogni worker può reclamare ed elaborare in un singolo ciclo di polling
+  displayName: WORKER_BATCH_SIZE
+  required: false
+  name: WORKER_BATCH_SIZE
+  value: "100"
+- description: Abilita o disabilita il meccanismo di polling dei worker
+  displayName: WORKER_POLL_ENABLED
+  required: false
+  name: WORKER_POLL_ENABLED
+  value: "true"
+- description: Timeout (in minuti) dopo il quale un item reclamato da un worker ma non completato viene può essere reclamato da un altro worker
+  displayName: WORKER_CLAIM_TIMEOUT_MINUTES
+  required: false
+  name: WORKER_CLAIM_TIMEOUT_MINUTES
+  value: "15"
+- description: Numero massimo di item che ogni worker può reclamare ed elaborare in un singolo ciclo di polling
+  displayName: KAFKA_VERIFY_BATCH_SIZE
+  required: false
+  name: KAFKA_VERIFY_BATCH_SIZE
+  value: "500"
+- description: Timeout (in minuti) dopo il quale un item reclamato da un worker ma non completato viene può essere reclamato da un altro worker
+  displayName: KAFKA_VERIFY_TIMEOUT_MINUTES
+  required: false
+  name: KAFKA_VERIFY_TIMEOUT_MINUTES
+  value: "5"
+
