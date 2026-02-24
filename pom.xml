@@ -1,39 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
+  <artifactId>cancellazione-logica-ud</artifactId>
+  <version>1.2.1-SNAPSHOT</version>
+  <name>cancellazione-logica-ud</name>
+  <description>Progetto per cancellazione logica Unità Documentarie</description>
+
   <parent>
     <groupId>it.eng.parer</groupId>
     <artifactId>parer-pom</artifactId>
     <version>7.1.3</version>
   </parent>
-  <artifactId>cancellazione-logica-ud</artifactId>
-  <version>1.2.1-SNAPSHOT</version>
-  <name>cancellazione-logica-ud</name>
-  <description>Progetto per cancellazione logica Unità Documentarie</description>
-  <url>https://nexus.ente.regione.emr.it/repository/parer-site/cancellazione-logica-ud/${project.version}/</url>
 
-  <scm>
+
+<scm>
     <developerConnection>scm:git:https://github.com/RegioneER/parer-cancellazione-logica-ud.git</developerConnection>
     <tag>HEAD</tag>
   </scm>
-  
 
-  <distributionManagement>
+  
+<distributionManagement>
         <repository>
           <id>github</id>
           <url>https://maven.pkg.github.com/RegioneER/parer-cancellazione-logica-ud</url>
         </repository>      
     </distributionManagement>
-  
 
-
-   <repositories>
+<repositories>
         <repository>
             <id>github</id>
             <url>https://maven.pkg.github.com/RegioneER/parer-framework-parerpom</url>           
         </repository>
      </repositories>
-
+  
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -53,7 +52,7 @@
     <dom4j.version>2.1.3</dom4j.version>
     <infinispan-embedded.version>1.3.0</infinispan-embedded.version>
   </properties>
-  
+
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -110,6 +109,7 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
+
   <dependencies>
     <!-- QUARKUS+HIBERNATE+ORACLE -->
     <dependency>
