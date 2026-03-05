@@ -1,0 +1,62 @@
+# This repository adheres to the publiccode.yml standard by including this 
+# metadata file that makes public software easily discoverable.
+# More info at https://github.com/italia/publiccode.yml
+
+publiccodeYmlVersion: '0.5'
+categories:
+  - data-collection
+  - data-visualization
+dependsOn:
+  open:
+    - name: Cancellazione Logica UD
+      optional: false
+      version: ''
+      versionMax: ''
+      versionMin: ''
+description:
+  it:
+    features:
+      - archiviazione documentale
+    longDescription: |
+      Microservizio per l'implementazione della "cancellazione logica" (soft delete) delle Unità Documentarie (UD) e dell'intera gerarchia di entità collegate. Il processo prevede la registrazione asincrona delle richieste di cancellazione logica (multi–tipologia), minimizzare la latenza tra richiesta e primo item elaborato (pipeline sovrapposta), garantire coerenza relazionale multi‑livello mediante algoritmo BFS ottimizzato e batch query, supportare modalità di elaborazione CAMPIONE e COMPLETA (bottom‑up sulle relazioni), ecc..
+    shortDescription: |-
+      Microservizio per l'implementazione della "cancellazione logica" (soft delete) delle Unità Documentarie (UD).
+developmentStatus: stable
+intendedAudience:
+  countries:
+    - IT
+IT:
+  countryExtensionVersion: '0.2'
+  piattaforme:
+    anpr: false
+    cie: false
+    pagopa: false
+    spid: false
+landingURL: 'https://github.com/RegioneER/parer-cancellazione-logica-ud'
+legal:
+  license: AGPL-3.0-or-later
+  mainCopyrightOwner: Regione Emilia-Romagna
+organisation:
+  name: Regione Emilia-Romagna
+  uri: urn:x-italian-pa:r_emiro    
+localisation:
+  availableLanguages:
+    - IT
+  localisationReady: true
+logo: |-
+  https://raw.githubusercontent.com/RegioneER/parer-cancellazione-logica-ud/master/src/docs/rer-logo.png
+maintenance:
+  contacts:
+    - email: areasviluppoparer@regione.emilia-romagna.it
+      name: Cristiano Casagni
+  contractors:
+    - name: ' Engineering Ingegneria Informatica S.p.A.'
+      until: '2026-12-23'
+  type: contract
+name: Parer - Cancellazione Logica UD
+platforms:
+  - linux
+releaseDate: '2023-11-13'
+softwareType: standalone/backend
+url: 'https://github.com/RegioneER/parer-cancellazione-logica-ud.git'
+applicationSuite: SACER
