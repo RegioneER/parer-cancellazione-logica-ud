@@ -1,18 +1,14 @@
 /*
  * Engineering Ingegneria Informatica S.p.A.
  *
- * Copyright (C) 2023 Regione Emilia-Romagna
- * <p/>
- * This program is free software: you can redistribute it and/or modify it under the terms of
- * the GNU Affero General Public License as published by the Free Software Foundation,
- * either version 3 of the License, or (at your option) any later version.
- * <p/>
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU Affero General Public License for more details.
- * <p/>
- * You should have received a copy of the GNU Affero General Public License along with this program.
- * If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (C) 2023 Regione Emilia-Romagna <p/> This program is free software: you can
+ * redistribute it and/or modify it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the License, or (at your option)
+ * any later version. <p/> This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ * PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. <p/> You should
+ * have received a copy of the GNU Affero General Public License along with this program. If not,
+ * see <https://www.gnu.org/licenses/>.
  */
 
 package it.eng.parer.soft.delete.beans.dao;
@@ -125,6 +121,24 @@ public class RegistrazioneRichiesteDao implements IRegistrazioneRichiesteDao {
         }
     }
 
+    @Override
+    public Long getIdRichScartoVersEvasa(BigDecimal idStrut, BigDecimal idRichiestaSacer)
+            throws AppGenericPersistenceException {
+        String queryStr = "SELECT u.idRichScartoVers FROM AroRichScartoVers u "
+                + "JOIN u.aroStatoRichScartoVers stati " + "WHERE u.orgStrut.idStrut = :idStrut "
+                + "AND u.idRichScartoVers = :idRichiestaSacer "
+                + "AND stati.pgStatoRichScartoVers = (SELECT MAX(maxStati.pgStatoRichScartoVers) FROM AroStatoRichScartoVers maxStati WHERE maxStati.aroRichScartoVers.idRichScartoVers = u.idRichScartoVers) AND stati.tiStatoRichScartoVers = 'EVASA' ";
+        Query query = entityManager.createQuery(queryStr);
+        query.setParameter(QUERY_PARAM_ID_STRUT, TypeConverter.longFromBigDecimal(idStrut));
+        query.setParameter(QUERY_PARAM_ID_RICHIESTA_SACER, idRichiestaSacer);
+        List<Long> listaRichAnnVrs = query.getResultList();
+        if (listaRichAnnVrs != null && !listaRichAnnVrs.isEmpty()) {
+            return listaRichAnnVrs.get(0);
+        } else {
+            return null;
+        }
+    }
+
     /**
      * Ritorna la richiesta data l'unità documentaria come parametro se lo stato richiesta è
      * PRESA_IN CARICO o ACQUISITA
@@ -217,6 +231,35 @@ public class RegistrazioneRichiesteDao implements IRegistrazioneRichiesteDao {
         }
     }
 
+    @Override
+    public AroRichSoftDelete getAroRichSoftDeleteContainingRichScartoVers(Long idRichScartoVers,
+            Long idRichSoftDelete) throws AppGenericPersistenceException {
+        StringBuilder queryStr = new StringBuilder(
+                "SELECT rich FROM AroItemRichSoftDelete item JOIN item.aroRichSoftDelete rich JOIN rich.aroStatoRichSoftDelete stati "
+                        + "JOIN item.aroRichScartoVers scarto JOIN scarto.aroStatoRichScartoVers statiScarto "
+                        + "WHERE ");
+        if (idRichSoftDelete != null) {
+            queryStr.append(QUERY_STRING_NOT_ID_RICH_SOFT_DELETE).append(QUERY_STRING_AND);
+        }
+        queryStr.append("item.aroRichScartoVers.idRichScartoVers = :idRichScartoVers AND "
+                + "stati.pgStatoRichSoftDelete = (SELECT MAX(maxStati.pgStatoRichSoftDelete) FROM AroStatoRichSoftDelete maxStati WHERE maxStati.aroRichSoftDelete.idRichSoftDelete = rich.idRichSoftDelete) AND "
+                + "stati.tiStatoRichSoftDelete IN ('PRESA_IN_CARICO', 'ACQUISITA') AND "
+                + "statiScarto.pgStatoRichScartoVers = (SELECT MAX(maxStatiScarto.pgStatoRichScartoVers) FROM AroStatoRichScartoVers maxStatiScarto WHERE maxStatiScarto.aroRichScartoVers.idRichScartoVers = scarto.idRichScartoVers) AND "
+                + "statiScarto.tiStatoRichScartoVers = 'EVASA'");
+
+        Query query = entityManager.createQuery(queryStr.toString());
+        query.setParameter("idRichScartoVers", idRichScartoVers);
+        if (idRichSoftDelete != null) {
+            query.setParameter(QUERY_PARAM_ID_RICH_SOFT_DELETE, idRichSoftDelete);
+        }
+        List<AroRichSoftDelete> list = query.getResultList();
+        if (list != null && !list.isEmpty()) {
+            return list.get(0);
+        } else {
+            return null;
+        }
+    }
+
     /**
      * Recupera le unità documentarie associate a una richiesta
      */
@@ -256,6 +299,12 @@ public class RegistrazioneRichiesteDao implements IRegistrazioneRichiesteDao {
         q.setParameter(QUERY_PARAM_ID_UNITA_DOC, idUnitaDoc);
         q.setParameter("falseFlag", Flag.FALSE);
         return !q.getResultList().isEmpty();
+    }
+
+    @Override
+    public boolean isUdNonScartata(long idUnitaDoc) {
+        log.debug("Verifica su ud per SCARTO_ARCHIVISTICO da implementare");
+        return false;
     }
 
     /**
@@ -352,6 +401,30 @@ public class RegistrazioneRichiesteDao implements IRegistrazioneRichiesteDao {
         Query query = entityManager.createQuery(queryStr);
         query.setParameter(QUERY_PARAM_ID_STRUT, idStrut);
         query.setParameter("idRichRestArch", idRichRestArch);
+        Long numUd = (Long) query.getSingleResult();
+        return numUd > 0;
+    }
+
+    /**
+     * Controlla che esista la richiesta di scarto archivistico per l'UD in input
+     * <p>
+     * (NOTA: una richiesta di scarto archivistico può essere evasa solo una volta, per questo il
+     * conteggio non può essere superiore a 1)
+     *
+     * @param idStrut          id struttura
+     * @param idRichScartoVers idRichScartoVers
+     *
+     * @return true/false
+     */
+    @Override
+    public boolean existAroRichScartoVers(BigDecimal idStrut, BigDecimal idRichScartoVers)
+            throws AppGenericPersistenceException {
+        String queryStr = "SELECT COUNT(u) FROM AroRichScartoVers u "
+                + "WHERE u.orgStrut.idStrut = :idStrut "
+                + "AND u.idRichScartoVers = :idRichScartoVers ";
+        Query query = entityManager.createQuery(queryStr);
+        query.setParameter(QUERY_PARAM_ID_STRUT, TypeConverter.longFromBigDecimal(idStrut));
+        query.setParameter("idRichScartoVers", idRichScartoVers);
         Long numUd = (Long) query.getSingleResult();
         return numUd > 0;
     }

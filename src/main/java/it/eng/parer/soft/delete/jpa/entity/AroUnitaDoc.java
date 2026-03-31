@@ -148,6 +148,9 @@ public class AroUnitaDoc extends SoftDelete implements Serializable {
     private List<AroItemRichAnnulVers> aroItemRichAnnulVers = new ArrayList<>();
 
     @OneToMany(mappedBy = "aroUnitaDoc")
+    private List<AroItemRichScartoVers> aroItemRichScartoVers = new ArrayList<>();
+
+    @OneToMany(mappedBy = "aroUnitaDoc")
     private List<ElvElencoVersUdAnnul> elvElencoVersUdAnnuls = new ArrayList<>();
 
     @OneToMany(mappedBy = "aroUnitaDoc")
@@ -314,6 +317,10 @@ public class AroUnitaDoc extends SoftDelete implements Serializable {
 
     public List<AroItemRichAnnulVers> getAroItemRichAnnulVers() {
         return this.aroItemRichAnnulVers;
+    }
+
+    public List<AroItemRichScartoVers> getAroItemRichScartoVers() {
+        return this.aroItemRichScartoVers;
     }
 
     public List<ElvElencoVersUdAnnul> getElvElencoVersUdAnnuls() {

@@ -1,18 +1,14 @@
 /*
  * Engineering Ingegneria Informatica S.p.A.
  *
- * Copyright (C) 2023 Regione Emilia-Romagna
- * <p/>
- * This program is free software: you can redistribute it and/or modify it under the terms of
- * the GNU Affero General Public License as published by the Free Software Foundation,
- * either version 3 of the License, or (at your option) any later version.
- * <p/>
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU Affero General Public License for more details.
- * <p/>
- * You should have received a copy of the GNU Affero General Public License along with this program.
- * If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (C) 2023 Regione Emilia-Romagna <p/> This program is free software: you can
+ * redistribute it and/or modify it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the License, or (at your option)
+ * any later version. <p/> This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ * PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. <p/> You should
+ * have received a copy of the GNU Affero General Public License along with this program. If not,
+ * see <https://www.gnu.org/licenses/>.
  */
 
 /*
@@ -46,6 +42,7 @@ import it.eng.parer.soft.delete.beans.utils.CostantiDB;
 import it.eng.parer.soft.delete.jpa.entity.AroErrRichSoftDelete;
 import it.eng.parer.soft.delete.jpa.entity.AroItemRichSoftDelete;
 import it.eng.parer.soft.delete.jpa.entity.AroRichAnnulVers;
+import it.eng.parer.soft.delete.jpa.entity.AroRichScartoVers;
 import it.eng.parer.soft.delete.jpa.entity.AroRichSoftDelete;
 import it.eng.parer.soft.delete.jpa.entity.AroStatoRichSoftDelete;
 import it.eng.parer.soft.delete.jpa.entity.AroUnitaDoc;
@@ -81,6 +78,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
     private static final String STATO_CONSERVAZIONE_NON_VALIDO_STRING = " ha stato di conservazione pari a ";
     private static final String NON_ANNULLATA_STRING = " non \u00E8 annullata";
     private static final String NON_RESTITUITA_STRING = " non \u00E8 restituita";
+    private static final String NON_SCARTATA_STRING = " non \u00E8 scartata";
     private static final String NON_ESISTE_STRING = " non esiste";
     private static final String NON_PUO_ESSERE_ELABORATA_STRING = " e, quindi, non pu\u00F2 essere elaborata";
 
@@ -843,12 +841,9 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
                     || CostantiDB.StatoConservazioneUnitaDoc.ANNULLATA.name()
                             .equals(statoConservazione);
 
-        case SCARTO_ARCHIVISTICO -> {
-            // TODO: Definire gli stati validi per SCARTO_ARCHIVISTICO
-            // Placeholder: accetta qualsiasi stato per ora
-            log.debug("Verifica stato conservazione per SCARTO_ARCHIVISTICO da implementare");
-            yield true;
-        }
+        case SCARTO_ARCHIVISTICO ->
+            // Per scarto archivistico non deve essere ANNULLATA
+            !CostantiDB.StatoConservazioneUnitaDoc.ANNULLATA.name().equals(statoConservazione);
 
         default -> {
             log.warn("Tipologia sconosciuta: {}", tipoRichiesta);
@@ -987,25 +982,45 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
     }
 
     /**
-     * Gestisce la logica specifica per item padre di tipo SCARTO_ARCHIVISTICO. TODO: Implementare
-     * la logica specifica quando disponibile.
+     * Gestisce la logica specifica per item padre di tipo SCARTO_ARCHIVISTICO. Verifica l'esistenza
+     * della richiesta di scarto archivistico e ne controlla lo stato.
      */
     private void gestisciItemPadreScartoArchivistico(AroItemRichSoftDelete itemPadre,
             BigDecimal idStrut, BigDecimal idRichiestaSacer, Long idUserIam)
             throws AppGenericPersistenceException {
 
-        // TODO: Implementare la logica specifica per SCARTO_ARCHIVISTICO
-        // Al momento utilizziamo una logica placeholder simile ad ANNULLAMENTO_VERSAMENTO
-        log.warn(
-                "Logica per SCARTO_ARCHIVISTICO non ancora implementata completamente - richiesta: {}",
+        // Recupera l'ID della richiesta di scarto archivistico dell'UD
+        Long idRichScartoVers = registrazioneRichiesteDao.getIdRichScartoVersEvasa(idStrut,
                 idRichiestaSacer);
 
-        // Placeholder - da sostituire con la logica effettiva quando sarà definita
-        String dsErr = RICHIESTA_SCARTO_ARCH_STRING + idRichiestaSacer
-                + " - funzionalità in fase di implementazione";
-        createAroErrRichSoftDelete(itemPadre, BigDecimal.ONE,
-                CostantiDB.TipoErrRichSoftDelete.ITEM_NON_ESISTE.name(), dsErr,
-                CostantiDB.TipoGravitaErrore.WARNING.name());
+        if (idRichScartoVers != null) {
+            // Richiesta di scarto archivistico con stato EVASA esistente
+            AroRichScartoVers richScartoVers = entityManager.find(AroRichScartoVers.class,
+                    idRichScartoVers);
+            itemPadre.setAroRichScartoVers(richScartoVers);
+
+            // Già qui, controllo lo scarto definito nella richiesta e che sto trattando
+            controlloItemDaElaborare(itemPadre, idUserIam, TipoRichiestaType.SCARTO_ARCHIVISTICO);
+        } else {
+            // Se non esiste una richiesta di scarto archivistico con
+            // stato EVASA, allora controllo se esiste in generale
+            if (registrazioneRichiesteDao.existAroRichScartoVers(idStrut, idRichiestaSacer)) {
+                // Richiesta di scarto archivistico esistente - creo record di errore
+                String dsErr = RICHIESTA_SCARTO_ARCH_STRING + idRichiestaSacer
+                        + " \u00E8 in corso di scarto";
+                createAroErrRichSoftDelete(itemPadre, BigDecimal.ONE,
+                        CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_SCARTO.name(), dsErr,
+                        CostantiDB.TipoGravitaErrore.ERRORE.name());
+            } else {
+                // Richiesta di scarto archivistico di tipo CANCELLAZIONE non
+                // esistente -
+                // creo record di errore
+                String dsErr = RICHIESTA_SCARTO_ARCH_STRING + idRichiestaSacer + " non esiste";
+                createAroErrRichSoftDelete(itemPadre, BigDecimal.ONE,
+                        CostantiDB.TipoErrRichSoftDelete.ITEM_NON_ESISTE.name(), dsErr,
+                        CostantiDB.TipoGravitaErrore.ERRORE.name());
+            }
+        }
     }
 
     @Transactional
@@ -1066,6 +1081,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
         AroUnitaDoc ud = item.getAroUnitaDoc();
         AroRichAnnulVers richAnnVrs = item.getAroRichAnnulVers();
         AroRichiestaRa richRestArch = item.getAroRichiestaRa();
+        AroRichScartoVers richScartoVrs = item.getAroRichScartoVers();
 
         // Se item di tipo UNI_DOC e se è definito l'identificatore dell'unità doc
         if (ud != null && item.getTiItemRichSoftDelete()
@@ -1126,6 +1142,17 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
             // corrente, con stato PRESA_IN_CARICO o ACQUISITA che contiene quella richiesta di
             // restituzione archivio con stato RESTITUITO da elaborare
             progressivoErr = controlloRichiestaDuplicataPerRestituzioneArchivio(item, richRestArch,
+                    progressivoErr, tipoRichiesta);
+        } else if (richScartoVrs != null && item.getTiItemRichSoftDelete()
+                .equals(CostantiDB.TiItemRichSoftDelete.SCARTO_ARCH.name())) {
+            // ====================================================
+            // CONTROLLI PER RICHIESTE DI SCARTO ARCHIVISTICO
+            // ====================================================
+
+            // Controllo se esiste già un'altra richiesta di cancellazione logica, diversa da quella
+            // corrente, con stato PRESA_IN_CARICO o ACQUISITA che contiene quella richiesta di
+            // scarto archivistico con stato EVASA da elaborare
+            progressivoErr = controlloRichiestaDuplicataPerScartoArchivistico(item, richScartoVrs,
                     progressivoErr, tipoRichiesta);
         }
 
@@ -1222,6 +1249,33 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
     }
 
     /**
+     * Verifica se la richiesta di scarto archivistico è già presente in un'altra richiesta di
+     * cancellazione logica in corso di elaborazione.
+     */
+    private int controlloRichiestaDuplicataPerScartoArchivistico(AroItemRichSoftDelete item,
+            AroRichScartoVers richScartoVrs, int progressivoErr, TipoRichiestaType tipoRichiesta)
+            throws AppGenericPersistenceException {
+
+        AroRichSoftDelete existingRich = registrazioneRichiesteDao
+                .getAroRichSoftDeleteContainingRichScartoVers(richScartoVrs.getIdRichScartoVers(),
+                        item.getAroRichSoftDelete().getIdRichSoftDelete());
+
+        if (existingRich != null) {
+            // Richiesta di scarto archivistico già presente in un'altra richiesta di
+            // cancellazione logica diversa da quella corrente
+            String dsErr = getDescrizioneRichiesta(tipoRichiesta)
+                    + richScartoVrs.getCdRichScartoVers()
+                    + " \u00E8 in corso di elaborazione nella richiesta con id "
+                    + existingRich.getIdRichSoftDelete();
+            createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
+                    CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_ELAB.name(), dsErr,
+                    CostantiDB.TipoGravitaErrore.ERRORE.name());
+        }
+
+        return progressivoErr;
+    }
+
+    /**
      * Controlli specifici per tipologia ANNULLAMENTO_VERSAMENTO. Verifica che l'UD sia in stato
      * ANNULLATA e che sia effettivamente annullata.
      */
@@ -1257,7 +1311,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
 
     /**
      * Controlli specifici per tipologia RESTITUZIONE_ARCHIVIO. Verifica che l'UD sia in stato
-     * AIP_FIRMATO o IN_ARCHIVIO e che sia effettivamente restituita.
+     * AIP_FIRMATO o IN_ARCHIVIO o ANNULLATA e che sia effettivamente restituita.
      */
     private int controlliSpecificiRestituzioneArchivio(AroItemRichSoftDelete item, AroUnitaDoc ud,
             int progressivoErr) throws AppGenericPersistenceException {
@@ -1295,16 +1349,35 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
     }
 
     /**
-     * Controlli specifici per tipologia SCARTO_ARCHIVISTICO. TODO: Implementare controlli specifici
-     * quando la logica sarà definita.
+     * Controlli specifici per tipologia SCARTO_ARCHIVISTICO. Verifica che l'UD non sia in stato
+     * ANNULLATA e che sia effettivamente scartata.
      */
     private int controlliSpecificiScartoArchivistico(AroItemRichSoftDelete item, AroUnitaDoc ud,
             int progressivoErr) throws AppGenericPersistenceException {
 
-        // TODO: Implementare controlli specifici per SCARTO_ARCHIVISTICO
-        // Esempio: verifica di stati di conservazione specifici per lo scarto (es. VERSATA, ecc.)
-        log.debug("Controlli specifici per SCARTO_ARCHIVISTICO da implementare per UD: {}-{}-{}",
-                ud.getCdRegistroKeyUnitaDoc(), ud.getAaKeyUnitaDoc(), ud.getCdKeyUnitaDoc());
+        // Per SCARTO_ARCHIVISTICO lo stato di conservazione non deve essere ANNULLATA
+        if (ud.getTiStatoConservazione()
+                .equals(CostantiDB.StatoConservazioneUnitaDoc.ANNULLATA.name())) {
+            // Stato conservazione errato per scarto archivistico
+            String dsErr = UNITA_DOCUMENTARIA_STRING + ud.getCdRegistroKeyUnitaDoc() + "-"
+                    + ud.getAaKeyUnitaDoc().toPlainString() + "-" + ud.getCdKeyUnitaDoc()
+                    + STATO_CONSERVAZIONE_NON_VALIDO_STRING + ud.getTiStatoConservazione()
+                    + NON_PUO_ESSERE_ELABORATA_STRING;
+            createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
+                    CostantiDB.TipoErrRichSoftDelete.STATO_CONSERV_NON_AMMESSO.name(), dsErr,
+                    CostantiDB.TipoGravitaErrore.ERRORE.name());
+        }
+
+        // Controlla se l'unità documentaria definita per item corrente non è scartata,
+        // in caso positivo registro l'errore.
+        if (registrazioneRichiesteDao.isUdNonScartata(ud.getIdUnitaDoc())) {
+            String dsErr = UNITA_DOCUMENTARIA_STRING + ud.getCdRegistroKeyUnitaDoc() + "-"
+                    + ud.getAaKeyUnitaDoc().toPlainString() + "-" + ud.getCdKeyUnitaDoc()
+                    + NON_SCARTATA_STRING;
+            createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
+                    CostantiDB.TipoErrRichSoftDelete.ITEM_NON_SCARTATO.name(), dsErr,
+                    CostantiDB.TipoGravitaErrore.ERRORE.name());
+        }
 
         return progressivoErr;
     }

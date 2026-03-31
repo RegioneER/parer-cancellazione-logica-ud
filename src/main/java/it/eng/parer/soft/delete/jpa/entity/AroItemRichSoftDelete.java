@@ -76,6 +76,8 @@ public class AroItemRichSoftDelete implements Serializable {
 
     private AroRichiestaRa aroRichiestaRa;
 
+    private AroRichScartoVers aroRichScartoVers;
+
     private AroItemRichSoftDelete aroItemRichPadre;
 
     public AroItemRichSoftDelete() {/* Hibernate */
@@ -260,6 +262,16 @@ public class AroItemRichSoftDelete implements Serializable {
 
     public void setAroRichiestaRa(AroRichiestaRa aroRichiestaRa) {
         this.aroRichiestaRa = aroRichiestaRa;
+    }
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_RICH_SCARTO_VERS")
+    public AroRichScartoVers getAroRichScartoVers() {
+        return this.aroRichScartoVers;
+    }
+
+    public void setAroRichScartoVers(AroRichScartoVers aroRichScartoVers) {
+        this.aroRichScartoVers = aroRichScartoVers;
     }
 
     @ManyToOne(fetch = FetchType.LAZY)

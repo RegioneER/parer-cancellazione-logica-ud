@@ -8,17 +8,435 @@ Fonte template redazione documento:  https://www.makeareadme.com/.
 
 # Descrizione
 
-Microservizio (Quarkus / JPA / Oracle) per l’implementazione della “cancellazione logica” (soft delete) delle Unità Documentarie (UD) e dell’intera gerarchia di entità collegate, con obiettivi di:
+Microservizio per l'implementazione della "cancellazione logica" (soft delete) delle Unità Documentarie (UD) e dell'intera gerarchia di entità collegate, con obiettivi di:
 - Registrazione asincrona delle richieste di cancellazione logica (multi–tipologia)
 - Minimizzare la latenza tra richiesta e primo item elaborato (pipeline sovrapposta).
 - Garantire coerenza relazionale multi‑livello mediante algoritmo BFS ottimizzato e batch query.
 - Supportare modalità di elaborazione CAMPIONE e COMPLETA (bottom‑up sulle relazioni).
 - Scalare orizzontalmente (multi‑pod) con claim cooperativo (worker cooperanti) e isolamento transazionale per item/batch.
-- Stream JPA + Spliterator per parallelismo e batching adattivo.
+- Garantire coerenza del timestamp di soft delete tra pod tramite cache distribuita, prevenendo race‑condition e perdita di eventi CDC.
+- Stream JPA + Spliterator per parallelismo intra‑pod e batching adattivo.
 - Ottimizzazione query relazionali tramite annotazioni custom @RelationQuery
+- Forzatura selettiva della modalità COMPLETA per singole entità tramite annotazione custom, indipendentemente dalla modalità globale configurata.
 - Tracciare in modo trasparente stati, errori, duplicati e volumi elaborati.
 - Esporre metadati strutturati (`TS_SOFT_DELETE`, `DM_SOFT_DELETE`) su centinaia di tabelle dominio per integrazione downstream (Kafka Connect / ksqlDB / DataMart).
 
+---
+
+## Panoramica
+Il microservizio riceve richieste XML di cancellazione logica di UD o altri tipi correlati. Registra subito la richiesta (stato PRESA_IN_CARICO) e fornisce immediatamente l’XML di risposta preliminare. In parallelo avvia:
+- Preprocessing: parsing e generazione items (unità elaborabili).
+- Processing: worker che iniziano ad elaborare gli items già generati (overlapping).
+
+La cancellazione logica implica l’aggiornamento timestamp e la creazione di un payload JSON descrittivo su tutte le entità raggiungibili a partire dalla UD root tramite relazioni JPA:
+- Aggiornando `TS_SOFT_DELETE`
+- Popolando `DM_SOFT_DELETE` (JSON tracciabile)
+- Preservando la consistenza referenziale
+- Garantendo audit completo (log, errori, versionamento XML richiesta/esito)
+
+Supporta richieste eterogenee (UD, Annullamento Versamento, Restituzione Archivio e Scarto Archivistico) con elaborazione asincrona, resiliente e scalabile.
+
+---
+
+## Glossario
+| Termine | Descrizione |
+|---------|-------------|
+| Richiesta | Entità radice del processo di soft delete (ARO_RICH_SOFT_DELETE). |
+| Item | Un elemento elaborabile (UD, ANNUL_VERS, …) legato alla richiesta. |
+| Preprocessing | Costruzione items tramite streaming JPA + Spliterator parallelizzato. |
+| Processing | Cancellazione bottom‑up e aggiornamento stato item. |
+| BFS | Strategia di esplorazione a livello (layered) della gerarchia parent→child. |
+| CAMPIONE | Aggiorna 1 figlio rappresentativo per relazione. |
+| COMPLETA | Aggiorna tutti i figli (fan‑out completo) e registra duplicati. |
+| Claim | Acquisizione concorrente di item via SKIP LOCKED. |
+| DM_SOFT_DELETE | JSON con coordinate logiche dell’operazione (per tracciamento/ETL). |
+| Duplicato | Figlio addizionale nella stessa relazione (tracciato in tabella dedicata). |
+
+---
+
+## Flusso end‑to‑end
+1. Ricezione XML richiesta (WS).
+2. Validazioni (versione, credenziali, formato).
+3. Persistenza richiesta + XML richiesta → Stato PRESA_IN_CARICO → Risposta XML immediata al chiamante.
+4. Avvio asincrono preprocessing: generazione progressiva items (streaming + parallel batch).
+5. Items diventano subito `DA_ELABORARE` e possono essere claimati dai worker (overlap).
+6. Fine preprocessing → Stato ACQUISITA (nessun nuovo item sarà generato).
+7. Worker (multi‑pod) completano elaborazione item (soft delete gerarchica).
+8. Quando nessun item rimane `DA_ELABORARE` → Stato EVASA (o ERRORE).
+
+---
+
+## Stati della richiesta e pipeline sovrapposta
+| Stato | Significato | Evento di ingresso |
+|-------|-------------|--------------------|
+| PRESA_IN_CARICO | Richiesta registrata, risposta inviata | Creazione richiesta |
+| ACQUISITA | Preprocessing items terminato | Fine generazione items |
+| EVASA | Tutti gli item elaborati (ELABORATO / NON_ELABORABILE / ERRORE_ELABORAZIONE) | Finalizer periodico |
+| ACQUISIZIONE_FALLITA | Nessun item elaborabile (tutti NON_ELABORABILE) | Post-preprocessing |
+| ERRORE | Errore impeditivo | Eccezioni critiche |
+
+Pipeline overlappata: i worker possono iniziare ad elaborare items mentre lo stato è ancora PRESA_IN_CARICO.
+
+---
+
+## Architettura logica interna
+Componenti:
+- API WS (ingresso richieste)
+- Servizio registrazione richieste
+- Preprocessing parallelizzato (Spliterator)
+- Scheduler (`quarkus-scheduler`) per:
+  - Poll & claim batch items
+  - Finalizzazione richieste
+- Worker asincroni (ManagedExecutor / vert.x)
+- Cache distribuita (Infinispan in modalità DIST_SYNC)
+- Motore BFS + soft delete bottom‑up
+- Persistenza log, errori, duplicati, stati, XML
+
+---
+
+## Gestione concorrenza & scalabilità multi‑pod
+Pattern: “Cooperative Consumers” su DB:
+- Claim item: `PESSIMISTIC_WRITE` + lock timeout `SKIP LOCKED`
+- Campi `CD_INSTANCE_ID`, `DT_CLAIM` anti doppio processing
+- Timeout reclaim (configurabile) per resilienza in caso di crash pod
+- Batch size configurabile (`worker.batch.size`) per regolare throughput
+
+---
+
+## Cache distribuita tra pod — Coerenza del timestamp CDC
+
+**Cache distribuita** (Infinispan in modalità cluster `DIST_SYNC` con replica su n nodi) che funge da **registro condiviso dell'ultimo timestamp noto tra tutti i pod**. Prima di eseguire gli UPDATE, ogni pod:
+
+1. **Legge** dalla cache il timestamp più recente conosciuto dal cluster.
+2. Calcola il proprio timestamp come valore **strettamente maggiore** di quello in cache.
+3. **Aggiorna** la cache con il nuovo valore, garantendo monotonicità (l'aggiornamento avviene solo se il nuovo valore è effettivamente maggiore di quello già presente).
+4. Esegue gli UPDATE su DB con il timestamp così determinato.
+
+In questo modo tutti i pod producono timestamp **monotoni e coordinati**, allineati all'ultimo valore noto, e il connector può sempre catturarli correttamente nel ciclo di polling successivo.
+
+Per ridurre la frequenza di accesso alla cache distribuita, ogni pod mantiene una **replica locale con TTL configurabile** (nell'ordine delle centinaia di millisecondi): entro questo intervallo il pod riusa il valore già letto senza interrogare Infinispan. Questo introduce una **micro‑finestra controllata** in cui due pod potrebbero teoricamente lavorare con lo stesso valore di base, ma grazie alla regola di monotonicità sull'aggiornamento il rischio è **drasticamente ridotto** rispetto allo scenario senza cache, **temporalmente circoscritto** al solo TTL configurato e statisticamente raro.
+
+---
+
+## Preprocessing items (parallelismo interno)
+Pipeline:
+1. Lettura streaming JPA (senza materializzare l’intero dataset).
+2. Calcolo cardinalità → Spliterator “dimensione nota”.
+3. `FixedBatchSpliterator` definisce batch adaptivo:
+   - < 5k → 25
+   - 5k–10k → 50
+   - 10k–100k → 100
+   - 100k–500k → 250
+   - 500k–1M → 500
+   - > 1M → 1000
+4. `parallelStream()` dei batch → transazione separata (REQUIRES_NEW).
+5. Items creati e messi subito `DA_ELABORARE`.
+6. Early claim: riduce time-to-first-elaboration.
+
+Gestione errori: interruzione coordinata su prima eccezione → rollback batch → prosieguo altri batch se non critico.
+
+Vantaggi:
+- Controllo memoria (materializza solo batch)
+- Scalabilità CPU intra‑pod
+- Isolamento transazionale per batch (rollback circoscritto)
+
+---
+
+## Scheduler, worker loop e vert.x worker pool
+| Funzione | Meccanismo |
+|----------|------------|
+| Polling claim | `@Scheduled(every="5s")` |
+| Finalizzazione richieste | `@Scheduled(every="3s")` |
+| Esecuzioni asincrone | ManagedExecutor / Vert.x worker pool |
+| Claim item | SELECT FOR UPDATE SKIP LOCKED + campi `CD_INSTANCE_ID`, `DT_CLAIM` |
+| Timeout claim | Reclaim se `DT_CLAIM` scaduto (configurabile) |
+
+Multi-pod scaling: ciascun pod esegue lo scheduler e compete in modo cooperativo.
+
+---
+
+## Algoritmo BFS multi‑livello
+Obiettivo: costruire gerarchia parent→child con efficienza.
+Passi:
+1. Livello 0 (root UD) aggiunto come seed.
+2. Per livello L: raggruppa nodi per classe parent.
+3. Recupera figli mediante query BATCH (`IN :parentIds`) per ogni (childClass,parentClass).
+4. Marca duplicati se un child appare in più relazioni.
+5. Registra per ogni livello un `StreamSource` lazy.
+6. Terminata la discovery: elabora livelli in ordine decrescente (bottom‑up), sfruttando grouping per relazione.
+
+Vantaggi:
+- Elimina N+1 query.
+- Minimizza carico di memoria (stream consumati per livello).
+- Riduce round-trip per fan‑out complessi.
+
+---
+
+## Strategia di query (batch universale + opzionale @RelationQuery)
+Principi:
+- Default: generazione dinamica query batch (`SELECT c.pk, c.parent.pk ... WHERE parent.id IN :parentIds`).
+- Se presente @RelationQuery con `IN :parentIds` → uso diretto.
+- Se presente @RelationQuery senza clausola batch → viene comunque privilegiato approccio batch se possibile (o fallback iterativo se la struttura non lo consente).
+- Caching in `RelationQueryExecutorService` per `(childClass,parentClass,level)`.
+
+---
+
+## Ottimizzazione query relazionali
+Annotazione `@RelationQuery` consente:
+- Query custom per relazione (child→parent) filtrando su root (`:rootId`) o parent batch (`IN :parentIds`)
+- Specifica livelli applicazione (`levels = {2,3,...}`)
+- Parametri configurabili (`parentIdParam`, `parentIdsParam`, `rootIdParam` default)
+- Fallback automatico a query generate se non definito.
+
+Esempio (da `AroCompVerIndiceAipUd`):
+```java
+@RelationQuery(
+  parentClass = AroCompDoc.class,
+  query = "SELECT c.idCompVerIndiceAipUd, c.aroCompDoc.idCompDoc FROM AroCompVerIndiceAipUd c ... WHERE p.idCompDoc IN :parentIds ...",
+  levels = {2},
+  parentIdsParam = "parentIds"
+)
+```
+`RelationQueryExecutorService`:
+- Cache per relazione+livello
+- Rileva capacità batch (clausola `IN`) → usa esecuzione unica per n parent
+- Stream `Object[]` → mappato in `EntityNode`
+- Chiusura sicura stream con `onClose`
+
+---
+
+## Modalità CAMPIONE vs COMPLETA
+| Aspetto | CAMPIONE | COMPLETA |
+|---------|----------|----------|
+| Figli elaborati per relazione | 1 rappresentativo | Tutti |
+| Duplicati | Ignorati | Inseriti in tabella duplicati |
+| Volume update | Ridotto | Massimo |
+| Uso tipico | Analisi, riduzione impatto | Produzione / full archival logic |
+| Costi DB | Minimi | Elevati ma batch-ottimizzati |
+
+---
+
+## Modalità COMPLETA per singole entità
+
+**Annotazione custom** applicabile a livello di classe entity che consente di **forzare la modalità COMPLETA** sulla singola entità, anche quando il processo generale opera in modalità CAMPIONE. Durante la traversata BFS, prima di elaborare ogni relazione, il motore verifica la presenza dell'annotazione sull'entity coinvolta: se presente, quella specifica entità viene elaborata in modalità COMPLETA (fan‑out totale + registrazione duplicati), mentre il resto della gerarchia continua con la modalità globale configurata.
+
+Questo permette di:
+- Applicare la logica completa **solo dove necessario**, senza impatto sulle prestazioni globali.
+- Mantenere i vantaggi della modalità CAMPIONE sul resto del grafo.
+- Centralizzare la configurazione a livello di entity, evitando logiche condizionali disperse nel codice.
+
+## Soft delete bottom‑up
+Per ogni livello (discendente):
+1. Raggruppa figli per relazione.
+2. Modalità CAMPIONE:
+   - Singolo UPDATE per entità scelta.
+3. Modalità COMPLETA:
+   - Bulk UPDATE figli (`UPDATE ... SET ts_soft_delete, dm_soft_delete ...`).
+   - Inserimento duplicati con `INSERT ... SELECT` se più di un figlio rilevante.
+4. Aggiornamento item root a ELABORATO quando la catena raggiunge il livello 0.
+5. Logging volumetrico per tabella e livello.
+
+Offset temporale: per ordinamento logico, i figli ricevono timestamp differenziato (nano offset) in base all’ordine.
+
+
+## Stato richieste & item
+
+### Richieste (tabella `ARO_STATO_RICH_SOFT_DELETE`)
+| Stato | Significato |
+|-------|-------------|
+| PRESA_IN_CARICO | Richiesta registrata, in attesa generazione item |
+| ACQUISITA | Item creati e pronti per elaborazione |
+| EVASA | Tutti item elaborati |
+| ACQUISIZIONE_FALLITA | Nessun item valido (tutti NON_ELABORABILE) |
+| ERRORE | Errore grave (aggiornamento stato forzato) |
+
+### Item (colonna `TI_STATO_ITEM`)
+| Stato | Significato |
+|-------|-------------|
+| DA_ELABORARE | In coda per claim |
+| NON_ELABORABILE | Violazioni controlli pre‑processing |
+| ELABORATO | Soft delete completata |
+| ERRORE_ELABORAZIONE | Eccezione durante processing |
+
+Errori item → registrati in `ARO_ERR_RICH_SOFT_DELETE`.
+
+---
+
+## Modello dati (tabelle principali)
+| Tabella | Ruolo | Note |
+|---------|-------|------|
+| ARO_RICH_SOFT_DELETE | Richieste | Modalità, tipo, struttura, stato corrente |
+| ARO_ITEM_RICH_SOFT_DELETE | Item | Supporta gerarchie (FK padre) + claim fields |
+| ARO_STATO_RICH_SOFT_DELETE | Storico stati | Progressivo + user |
+| ARO_XML_RICH_SOFT_DELETE | XML richiesta / risposta | Versionamento WS |
+| ARO_ERR_RICH_SOFT_DELETE | Errori validazione item | Gravità ERRORE/WARNING |
+| ARO_LOG_RICH_SOFT_DELETE | Log volumetrico per livello/tabella | Conteggio righe aggiornate |
+| ARO_DUP_RICH_SOFT_DELETE | Figli duplicati | Conserva `DM_SOFT_DELETE` |
+| *Tabelle dominio* | Aggiunta colonne `TS_SOFT_DELETE`, `DM_SOFT_DELETE` | Indici su `TS_SOFT_DELETE` |
+
+---
+
+## Errori e gestione eccezioni
+| Scenario | Azione |
+|----------|-------|
+| Errore batch preprocessing | Batch rollback, altri batch continuano. |
+| Eccezione durante soft delete item | Item → ERRORE_ELABORAZIONE (CD_ERR_MSG valorizzato). |
+| Fallimento globalizzato | Stato richiesta → ERRORE. |
+| Nessun item valido | Stato → ACQUISIZIONE_FALLITA. |
+| Query relazione problematica | Fallback a query batch generata; se impossibile, relazione saltata (WARN). |
+
+---
+
+## Configurazione (MicroProfile)
+| Property | Default | Descrizione |
+|----------|---------|-------------|
+| worker.batch.size | 5 | Item max per claim loop. |
+| worker.poll.enabled | true | Abilita scheduler di polling. |
+| worker.claim.timeout-minutes | 30 | Timeout per reclaim item. |
+| quarkus.uuid | auto | Identificativo univoco istanza (claim). |
+| (futuro) bfs.fetch.size | 100 | Hint fetch query relazioni. |
+| (futuro) softdelete.mode.default | COMPLETA | Modalità di default. |
+
+---
+
+## Performance e tuning
+| Area | Ottimizzazione | Impatto |
+|------|---------------|---------|
+| Preprocessing | Spliterator adattivo | Bilanciamento throughput/memoria |
+| BFS | Query batch universali | Riduce round-trip massivi |
+| Soft delete COMPLETA | Bulk update / insert duplicati | Miglior rapporto CPU/I/O |
+| Timestamp offset | plusNanos(offset*1000) | Ordering logico riproducibile |
+| Claim concurrency | Ridurre / aumentare `worker.batch.size` | Adattamento carico DB |
+| Modalità CAMPIONE | Minimizza scritture | Per validazioni rapide |
+
+---
+
+## Estendibilità (nuove relazioni / entità)
+Procedura:
+1. Aggiungere `TS_SOFT_DELETE`, `DM_SOFT_DELETE` + indice su tabella.
+2. Se necessario performance extra, annotare entity figlia con `@RelationQuery` (IN :parentIds).
+3. Assicurarsi che la relazione JPA (OneToMany / ManyToOne / OneToOne) sia mappata
+4. Verificare livello BFS (profondità).
+5. Eseguire test CAMPIONE e COMPLETA (con duplicati).
+6. Validare JSON `DM_SOFT_DELETE`.
+7. Aggiornare questo README e script di migrazione.
+
+---
+
+## Appendix A – Esempio timeline overlappata
+```
+T0      : Richiesta salvata → XML risposta (PRESA_IN_CARICO)
+T0+Δ1   : Primi batch items creati
+T0+Δ1   : Worker claim primi items
+T0+Δ2   : Preprocessing continua (nuovi items)
+T0+Δ3   : Preprocessing termina → ACQUISITA
+T0+Δ4   : Ultimo item elaborato → EVASA
+```
+
+## Appendix B – Pseudo Sequence (Testo)
+1. WS IN → `CancellazioneLogicaService.init()/verifica*()`
+2. `registraRichieste()` → persist Richiesta + XML → stato PRESA_IN_CARICO
+3. Async: `createItemsInNewTransaction()` → stream + batch → build item → stato ACQUISITA
+4. Worker loop:
+   - `claimBatch()` → item[DA_ELABORARE]
+   - per item → `softDeleteBottomUp()`
+     - build gerarchia → livelli desc
+     - per livello → update / insert duplicati
+     - item → ELABORATO
+5. Finalizer: `findRequestsToFinalize()` → se nessun item pending → stato EVASA
+6. XML esito registrato
+
+## Appendix C – Esempio DM_SOFT_DELETE root
+```json
+{"ID_UD":101,"ID_PK":101,"ID_FK":0,"NI_LVL":0,"NM_TAB":"ARO_UNITA_DOC","NM_PK":"ID_UNITA_DOC"}
+```
+
+## Appendix D – Esempio DM_SOFT_DELETE figlio
+```json
+{"ID_UD":101,"ID_PK":5555,"ID_FK":101,"NI_LVL":2,"NM_TAB":"ARO_COMP_DOC","NM_PK":"ID_COMP_DOC","NM_FK":"ID_UNITA_DOC"}
+```
+
+## Appendix E – Esempio query batch generata (fallback)
+```sql
+SELECT c.idCompDoc, c.aroUnitaDoc.idUnitaDoc
+FROM AroCompDoc c
+WHERE c.aroUnitaDoc.idUnitaDoc IN :parentIds
+```
+
+## Appendix F – Esempio controlli item (UD)
+- Esistenza UD
+- Stato conservazione = ANNULLATA
+- Duplicato nella stessa richiesta
+- Già presente in altra richiesta in corso (logica predisposta / commentata)
+→ Errori codificati in `ARO_ERR_RICH_SOFT_DELETE` con gravità ERRORE/WARNING.
+
+## Appendix G – Esempio configurazione (application.properties)
+```properties
+worker.batch.size=10
+worker.poll.enabled=true
+worker.claim.timeout-minutes=20
+quarkus.log.category."it.eng.parer.soft.delete".level=INFO
+```
+
+## Appendix H – Esempio @RelationQuery multi-livello
+```java
+@RelationQuery(
+  parentClass = AroVerIndiceAipUd.class,
+  query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip " +
+          "FROM AroCompVerIndiceAipUd c JOIN c.aroVerIndiceAipUd v JOIN v.aroIndiceAipUd d " +
+          "WHERE v.idVerIndiceAip IN :parentIds AND d.aroUnitaDoc.idUnitaDoc = :rootId",
+  levels = {3},
+  parentIdParam = "parentIds",
+  parentIdsParam = "parentIds"
+)
+```
+
+## Appendix I – Strategia fallback query relazioni
+1. Prova query ottimizzata batch (se clausola `IN`)
+2. Se non presente → query ottimizzata singola per parent
+3. Se non annotata → query generata standard `SELECT child.id, child.parent.id FROM Child ...`
+4. Sempre restituito stream `EntityNode`, con flag `isDuplicate`.
+
+## Appendix L – Esempio log di livello BFS
+```
+INFO  L=3 mode=COMPLETA parents=412 width=128 updated=356ms duplicates=23
+```
+
+## Appendix M – Esempio claim loop
+```
+[claim] items=5 instance=pod-01 timeoutThreshold=2025-09-11T10:22Z
+```
+
+## Appendix N – Campi claim item
+| Campo | Descrizione |
+|-------|-------------|
+| DT_CLAIM | Timestamp acquisizione item |
+| CD_INSTANCE_ID | Identificativo pod |
+| DT_FINE_ELAB | Chiusura elaborazione |
+| CD_ERR_MSG | Messaggio errore se fallito |
+
+## Appendix O – Metriche interpretazione rapida
+| Metrica | Azione se anomala |
+|---------|-------------------|
+| request.duration.ms elevato | Verificare overlap effettivo e batch size |
+| bfs.level.width molto alta | Profilare relazioni / fan‑out non previsto |
+| duplicates.count alta | Valutare efficacia modalità CAMPIONE per casi non critici |
+| items.failed.count > 0 | Ispezionare CD_ERR_MSG e errori DB |
+| claim.timeout riacquisizioni frequenti | Aumentare timeout o ridurre batch size |
+
+---
+
+## Note finali
+Questo microservizio realizza una pipeline di cancellazione logica ad alte prestazioni grazie alla combinazione di:
+- Overlapping tra generazione e consumo degli item
+- BFS multi‑livello con query batch universali
+- Parallelismo controllato su Spliterator adattivi
+- Strategie di lock non bloccanti (SKIP LOCKED)
+- Tracciabilità completa (log, duplicati, metadati JSON, stati)
+
+Ogni estensione deve preservare atomicità per item, coerenza transazionale per livello e auditabilità end‑to‑end.
+
+---
 
 # Installazione
 

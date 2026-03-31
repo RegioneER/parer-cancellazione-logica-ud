@@ -15,47 +15,43 @@ package it.eng.parer.soft.delete.jpa.entity;
 
 import java.io.Serializable;
 
-import org.hibernate.annotations.Immutable;
-
+import it.eng.parer.soft.delete.jpa.inheritance.SoftDelete;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+
 import jakarta.persistence.Table;
 
 /**
- * The persistent class for the APL_SISTEMA_VERSANTE database table.
- *
+ * The persistent class for the ARO_ERR_RICH_SCARTO_VERS database table.
  */
 @Entity
-@Immutable
-@Table(schema = "SACER_IAM", name = "APL_SISTEMA_VERSANTE")
-public class AplSistemaVersante implements Serializable {
+@Table(name = "ARO_ERR_RICH_SCARTO_VERS")
+
+public class AroErrRichScartoVers extends SoftDelete implements Serializable {
 
     private static final long serialVersionUID = 1L;
-    private Long idSistemaVersante;
-    private String nmSistemaVersante;
-
-    public AplSistemaVersante() {
-        // hibernate constructor
-    }
 
     @Id
-    @Column(name = "ID_SISTEMA_VERSANTE")
-    public Long getIdSistemaVersante() {
-        return this.idSistemaVersante;
+    @Column(name = "ID_ERR_RICH_SCARTO_VRS")
+    private Long idErrRichScartoVrs;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_ITEM_RICH_SCARTO_VERS")
+    private AroItemRichScartoVers aroItemRichScartoVers;
+
+    public AroErrRichScartoVers() {/* Hibernate */
     }
 
-    public void setIdSistemaVersante(Long idSistemaVersante) {
-        this.idSistemaVersante = idSistemaVersante;
+    public Long getIdErrRichScartoVrs() {
+        return this.idErrRichScartoVrs;
     }
 
-    @Column(name = "NM_SISTEMA_VERSANTE")
-    public String getNmSistemaVersante() {
-        return this.nmSistemaVersante;
-    }
-
-    public void setNmSistemaVersante(String nmSistemaVersante) {
-        this.nmSistemaVersante = nmSistemaVersante;
+    public AroItemRichScartoVers getAroItemRichScartoVers() {
+        return this.aroItemRichScartoVers;
     }
 
 }
