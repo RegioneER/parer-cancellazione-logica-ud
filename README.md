@@ -184,21 +184,34 @@ Principi:
 ## Ottimizzazione query relazionali
 Annotazione `@RelationQuery` consente:
 - Query custom per relazione (child→parent) filtrando su root (`:rootId`) o parent batch (`IN :parentIds`)
-- Specifica livelli applicazione (`levels = {2,3,...}`)
+- Specifica livelli applicazione (`levels = {2,3,...}`); `levels={}` → tutti i livelli
 - Parametri configurabili (`parentIdParam`, `parentIdsParam`, `rootIdParam` default)
 - Fallback automatico a query generate se non definito.
 
+**Posizionamento**: l'annotazione va posta sul field `@ManyToOne` o `@OneToOne` dell'entity figlia che rappresenta la relazione verso il parent. Per una stessa entity con più relazioni ottimizzate, ogni field porta la propria annotazione.
+
+**Semantica di `levels`:**
+- `levels = {}` (default): query attiva a **tutti i livelli** in cui questa relazione viene incontrata nella visita BFS.
+- `levels = {2}`: query attiva **solo al livello 2**; agli altri livelli si usa la query generata dinamicamente.
+- `levels = {2, 4}`: query attiva ai livelli 2 e 4.
+- **Priorità**: se per la stessa relazione esistono due annotazioni sullo stesso field (una specifica e una generica), il livello specifico ha la precedenza.
+- **Stessa relazione a più livelli**: con `levels={}` la stessa query vale per tutti i livelli. Per query diverse per livello, definire più `@RelationQuery` sullo stesso field con `levels` distinti.
+
 Esempio (da `AroCompVerIndiceAipUd`):
 ```java
+// parentClass inferita da AroVerIndiceAipUd (tipo del field)
 @RelationQuery(
-  parentClass = AroCompDoc.class,
-  query = "SELECT c.idCompVerIndiceAipUd, c.aroCompDoc.idCompDoc FROM AroCompVerIndiceAipUd c ... WHERE p.idCompDoc IN :parentIds ...",
-  levels = {2},
+  query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip ...",
+  levels = {3},
   parentIdsParam = "parentIds"
 )
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "ID_VER_INDICE_AIP")
+private AroVerIndiceAipUd aroVerIndiceAipUd;
 ```
 `RelationQueryExecutorService`:
-- Cache per relazione+livello
+- Cache per relazione+livello (chiave: `childClass->parentClass`)
+- Scansione field dell'entity: `parentClass` inferita dal tipo del field (funziona sia per `@ManyToOne` che per `@OneToOne`)
 - Rileva capacità batch (clausola `IN`) → usa esecuzione unica per n parent
 - Stream `Object[]` → mappato in `EntityNode`
 - Chiusura sicura stream con `onClose`
@@ -314,7 +327,7 @@ Errori item → registrati in `ARO_ERR_RICH_SOFT_DELETE`.
 ## Estendibilità (nuove relazioni / entità)
 Procedura:
 1. Aggiungere `TS_SOFT_DELETE`, `DM_SOFT_DELETE` + indice su tabella.
-2. Se necessario performance extra, annotare entity figlia con `@RelationQuery` (IN :parentIds).
+2. Se necessario performance extra, annotare il field `@ManyToOne` o `@OneToOne` dell'entity figlia con `@RelationQuery` (IN :parentIds). La `parentClass` viene inferita automaticamente dal tipo del field.
 3. Assicurarsi che la relazione JPA (OneToMany / ManyToOne / OneToOne) sia mappata
 4. Verificare livello BFS (profondità).
 5. Eseguire test CAMPIONE e COMPLETA (con duplicati).
@@ -378,17 +391,37 @@ worker.claim.timeout-minutes=20
 quarkus.log.category."it.eng.parer.soft.delete".level=INFO
 ```
 
-## Appendix H – Esempio @RelationQuery multi-livello
+## Appendix H – Esempio @RelationQuery field-level e multi-livello
 ```java
+// Due relazioni distinte → ogni @RelationQuery è sul proprio field @ManyToOne o @OneToOne.
+// parentClass inferita automaticamente dal tipo del field.
+
+// Livello 2: AroCompVerIndiceAipUd come figlia di AroCompDoc
 @RelationQuery(
-  parentClass = AroVerIndiceAipUd.class,
-  query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip " +
-          "FROM AroCompVerIndiceAipUd c JOIN c.aroVerIndiceAipUd v JOIN v.aroIndiceAipUd d " +
-          "WHERE v.idVerIndiceAip IN :parentIds AND d.aroUnitaDoc.idUnitaDoc = :rootId",
-  levels = {3},
-  parentIdParam = "parentIds",
+  query = "SELECT c.idCompVerIndiceAipUd, c.aroCompDoc.idCompDoc FROM AroCompVerIndiceAipUd c ...",
+  levels = {2},
   parentIdsParam = "parentIds"
 )
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "ID_COMP_DOC")
+private AroCompDoc aroCompDoc;
+
+// Livello 3: AroCompVerIndiceAipUd come figlia di AroVerIndiceAipUd
+@RelationQuery(
+  query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip FROM AroCompVerIndiceAipUd c ... WHERE ... :rootId",
+  levels = {3},
+  parentIdsParam = "parentIds"
+)
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "ID_VER_INDICE_AIP")
+private AroVerIndiceAipUd aroVerIndiceAipUd;
+```
+
+**Semantica `levels` — casi particolari:**
+```
+levels={}          → query usata a qualsiasi livello BFS (2, 3, 5...)
+levels={2}         → query usata solo a livello 2; altri livelli → fallback a query generata
+levels={2} + levels={5} (due @RelationQuery sullo stesso field) → query A a livello 2, query B a livello 5
 ```
 
 ## Appendix I – Strategia fallback query relazioni

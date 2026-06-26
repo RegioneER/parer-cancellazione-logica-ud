@@ -19,10 +19,15 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Container per annotazioni multiple RelationQuery sulla stessa classe
+ * Container per annotazioni multiple {@link RelationQuery} sullo stesso field.
+ *
+ * <p>
+ * Non va usato direttamente: viene generato automaticamente da Java quando si definiscono due o più
+ * {@code @RelationQuery} sullo stesso field (meccanismo {@code @Repeatable}). Il motore lo risolve
+ * in modo trasparente tramite {@code field.getAnnotationsByType(RelationQuery.class)}.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
+@Target(ElementType.FIELD)
 public @interface RelationQueries {
     RelationQuery[] value();
 }

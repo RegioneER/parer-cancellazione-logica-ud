@@ -30,27 +30,6 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "ARO_COMP_VER_INDICE_AIP_UD")
-@RelationQuery(parentClass = AroCompDoc.class, query = "SELECT c.idCompVerIndiceAipUd, c.aroCompDoc.idCompDoc "
-        + "FROM AroCompVerIndiceAipUd c " + "JOIN c.aroCompDoc p "
-        + "WHERE p.idCompDoc IN :parentIds " + "AND c.aroVerIndiceAipUd.idVerIndiceAip IN "
-        + "(SELECT v.idVerIndiceAip FROM AroVerIndiceAipUd v "
-        + "JOIN v.aroIndiceAipUd i JOIN i.aroUnitaDoc u WHERE u.idUnitaDoc = p.idUnitaDocRif)", levels = {
-                2 }, parentIdParam = "parentIds", parentIdsParam = "parentIds")
-// @RelationQuery(parentClass = AroCompDoc.class, query = "SELECT c.idCompVerIndiceAipUd,
-// c.aroCompDoc.idCompDoc "
-// + "FROM AroCompVerIndiceAipUd c " + "JOIN c.aroCompDoc p " + "JOIN p.aroStrutDoc s " + "JOIN
-// s.aroDoc d "
-// + "JOIN d.aroUnitaDoc ud " + "WHERE p.idCompDoc IN :parentIds " + "AND ud.idUnitaDoc = :rootId "
-// + "AND c.aroVerIndiceAipUd.idVerIndiceAip IN " + "(SELECT v.idVerIndiceAip FROM AroVerIndiceAipUd
-// v "
-// + "JOIN v.aroIndiceAipUd i JOIN i.aroUnitaDoc u WHERE u.idUnitaDoc = ud.idUnitaDoc)", levels = {
-// 4 }, parentIdsParam
-// = "parentIds")
-@RelationQuery(parentClass = AroVerIndiceAipUd.class, query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip "
-        + "FROM AroCompVerIndiceAipUd c " + "JOIN c.aroVerIndiceAipUd v "
-        + "JOIN v.aroIndiceAipUd d "
-        + "WHERE v.idVerIndiceAip IN :parentIds AND d.aroUnitaDoc.idUnitaDoc = :rootId", levels = {
-                3 }, parentIdParam = "parentIds", parentIdsParam = "parentIds")
 public class AroCompVerIndiceAipUd extends SoftDelete implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -59,10 +38,23 @@ public class AroCompVerIndiceAipUd extends SoftDelete implements Serializable {
     @Column(name = "ID_COMP_VER_INDICE_AIP_UD")
     private Long idCompVerIndiceAipUd;
 
+    // parentClass inferita da AroCompDoc (tipo del field)
+    @RelationQuery(query = "SELECT c.idCompVerIndiceAipUd, c.aroCompDoc.idCompDoc "
+            + "FROM AroCompVerIndiceAipUd c " + "JOIN c.aroCompDoc p "
+            + "WHERE p.idCompDoc IN :parentIds " + "AND c.aroVerIndiceAipUd.idVerIndiceAip IN "
+            + "(SELECT v.idVerIndiceAip FROM AroVerIndiceAipUd v "
+            + "JOIN v.aroIndiceAipUd i JOIN i.aroUnitaDoc u WHERE u.idUnitaDoc = p.idUnitaDocRif)", levels = {
+                    2 }, parentIdParam = "parentIds", parentIdsParam = "parentIds")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_COMP_DOC")
     private AroCompDoc aroCompDoc;
 
+    // parentClass inferita da AroVerIndiceAipUd (tipo del field)
+    @RelationQuery(query = "SELECT c.idCompVerIndiceAipUd, c.aroVerIndiceAipUd.idVerIndiceAip "
+            + "FROM AroCompVerIndiceAipUd c " + "JOIN c.aroVerIndiceAipUd v "
+            + "JOIN v.aroIndiceAipUd d "
+            + "WHERE v.idVerIndiceAip IN :parentIds AND d.aroUnitaDoc.idUnitaDoc = :rootId", levels = {
+                    3 }, parentIdParam = "parentIds", parentIdsParam = "parentIds")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_VER_INDICE_AIP")
     private AroVerIndiceAipUd aroVerIndiceAipUd;

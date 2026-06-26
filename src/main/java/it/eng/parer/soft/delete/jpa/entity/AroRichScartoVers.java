@@ -44,11 +44,6 @@ public class AroRichScartoVers extends SoftDelete implements Serializable {
     @Column(name = "CD_RICH_SCARTO_VERS")
     private String cdRichScartoVers;
 
-    /*
-     * @OneToMany(mappedBy = "aroRichScartoVers") private List<AroFileRichScartoVers>
-     * aroFileRichScartoVers = new ArrayList<>();
-     */
-
     @OneToMany(mappedBy = "aroRichScartoVers")
     private List<AroItemRichScartoVers> aroItemRichScartoVers = new ArrayList<>();
 
@@ -58,11 +53,6 @@ public class AroRichScartoVers extends SoftDelete implements Serializable {
 
     @OneToMany(mappedBy = "aroRichScartoVers")
     private List<AroStatoRichScartoVers> aroStatoRichScartoVers = new ArrayList<>();
-
-    /*
-     * @OneToMany(mappedBy = "aroRichScartoVers") private List<AroXmlRichScartoVers>
-     * aroXmlRichScartoVers = new ArrayList<>();
-     */
 
     public AroRichScartoVers() {/* Hibernate */
     }
@@ -83,11 +73,6 @@ public class AroRichScartoVers extends SoftDelete implements Serializable {
         this.cdRichScartoVers = cdRichScartoVers;
     }
 
-    /*
-     * public List<AroFileRichScartoVers> getAroFileRichScartoVers() { return
-     * this.aroFileRichScartoVers; }
-     */
-
     public List<AroItemRichScartoVers> getAroItemRichScartoVers() {
         return this.aroItemRichScartoVers;
     }
@@ -99,10 +84,5 @@ public class AroRichScartoVers extends SoftDelete implements Serializable {
     public List<AroStatoRichScartoVers> getAroStatoRichScartoVers() {
         return this.aroStatoRichScartoVers;
     }
-
-    /*
-     * public List<AroXmlRichScartoVers> getAroXmlRichScartoVers() { return
-     * this.aroXmlRichScartoVers; }
-     */
 
 }

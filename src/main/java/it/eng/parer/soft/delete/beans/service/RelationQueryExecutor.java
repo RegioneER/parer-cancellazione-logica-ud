@@ -31,7 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import it.eng.parer.soft.delete.beans.IRelationQueryExecutor;
-import it.eng.parer.soft.delete.beans.annotations.RelationQueries;
 import it.eng.parer.soft.delete.beans.annotations.RelationQuery;
 import it.eng.parer.soft.delete.beans.context.RootEntityContext;
 import it.eng.parer.soft.delete.beans.dto.EntityNode;
@@ -54,7 +53,9 @@ public class RelationQueryExecutor implements IRelationQueryExecutor {
         this.rootEntityContext = rootEntityContext;
     }
 
-    // Cache delle query ottimizzate per relazione e livello
+    // Cache delle query ottimizzate per relazione e livello.
+    // Una entry con mappa vuota indica che la scansione è già stata eseguita
+    // e non sono presenti annotazioni @RelationQuery per quella relazione.
     private final Map<String, Map<Integer, RelationQuery>> queriesByRelationAndLevel = new ConcurrentHashMap<>();
 
     /**
@@ -65,62 +66,78 @@ public class RelationQueryExecutor implements IRelationQueryExecutor {
             throws AppGenericPersistenceException {
         String relationKey = childClass.getName() + "->" + parentClass.getName();
 
-        if (!queriesByRelationAndLevel.containsKey(relationKey)) {
-            loadQueryAnnotations(childClass, parentClass, relationKey);
-        }
+        // computeIfAbsent garantisce scan unico per coppia (childClass, parentClass),
+        // anche per relazioni senza @RelationQuery (mappa vuota = sentinel "già scansionato")
+        queriesByRelationAndLevel.computeIfAbsent(relationKey,
+                k -> buildLevelQueryMap(childClass, parentClass));
 
         Map<Integer, RelationQuery> levelQueries = queriesByRelationAndLevel.get(relationKey);
-        if (levelQueries == null) {
-            return false;
-        }
 
         // Verifica se esiste una query specifica per questo livello o una query per tutti i
-        // livelli
-        // (-1)
+        // livelli (-1)
         return levelQueries.containsKey(level) || levelQueries.containsKey(-1);
     }
 
     /**
-     * Carica le annotazioni RelationQuery per la coppia child-parent
+     * Costruisce la mappa livello→query per la coppia child-parent scansionando i field dell'entity
+     * figlia il cui tipo coincide con {@code parentClass}.
+     *
+     * <p>
+     * Restituisce sempre una mappa (eventualmente vuota se nessun field è annotato): il risultato
+     * viene messo in cache da {@code computeIfAbsent} in {@link #hasOptimizedQueryFor} e in
+     * {@link #getBestQueryForLevel}, garantendo che la scansione avvenga <b>una sola volta</b> per
+     * coppia (childClass, parentClass) per l'intera vita dell'applicazione, anche per le relazioni
+     * prive di {@code @RelationQuery}.
+     *
+     * <p>
+     * Gestisce sia il caso di annotazione singola ({@code @RelationQuery}) sia il caso di
+     * annotazioni multiple sullo stesso field ({@code @RelationQuery} ripetuta, conservata da Java
+     * nel container {@code @RelationQueries}): {@code getAnnotationsByType} le risolve entrambe in
+     * modo trasparente.
+     *
+     * <p>
+     * Funziona sia per field {@code @ManyToOne} sia per {@code @OneToOne}.
+     *
+     * <p>
+     * In caso di conflitto tra livello specifico e livello generico ({@code -1}), il livello
+     * specifico ha la precedenza (vedi {@link #getBestQueryForLevel}).
      */
-    private void loadQueryAnnotations(Class<?> childClass, Class<?> parentClass,
-            String relationKey) {
+    private Map<Integer, RelationQuery> buildLevelQueryMap(Class<?> childClass,
+            Class<?> parentClass) {
         Map<Integer, RelationQuery> levelQueries = new HashMap<>();
 
-        // Cerca le annotazioni RelationQuery
-        RelationQuery[] queries;
-        if (childClass.isAnnotationPresent(RelationQueries.class)) {
-            // Multiple annotazioni
-            RelationQueries container = childClass.getAnnotation(RelationQueries.class);
-            queries = container.value();
-        } else if (childClass.isAnnotationPresent(RelationQuery.class)) {
-            // Singola annotazione
-            queries = new RelationQuery[] {
-                    childClass.getAnnotation(RelationQuery.class) };
-        } else {
-            // Nessuna annotazione
-            queries = new RelationQuery[0];
-        }
-
-        // Filtra le query per questa relazione parent-child
-        for (RelationQuery query : queries) {
-            if (query.parentClass().equals(parentClass)) {
-                if (query.levels().length == 0) {
-                    // Se non sono specificati livelli, la query si applica a
-                    // tutti i livelli
-                    levelQueries.put(-1, query);
-                } else {
-                    // Altrimenti, registra la query per ciascun livello
-                    // specificato
-                    for (int level : query.levels()) {
-                        levelQueries.put(level, query);
-                    }
-                }
+        // Scansione per tipo: funziona sia per @ManyToOne sia per @OneToOne.
+        // getAnnotationsByType gestisce trasparentemente sia @RelationQuery singola sia
+        // @RelationQueries (container Java per annotazioni ripetute sullo stesso field).
+        for (Field field : childClass.getDeclaredFields()) {
+            if (!field.getType().equals(parentClass)) {
+                continue;
+            }
+            RelationQuery[] fieldQueries = field.getAnnotationsByType(RelationQuery.class);
+            for (RelationQuery query : fieldQueries) {
+                registerQueryLevels(levelQueries, query);
             }
         }
 
-        if (!levelQueries.isEmpty()) {
-            queriesByRelationAndLevel.put(relationKey, levelQueries);
+        // Restituisce la mappa anche se vuota: la mappa vuota funge da sentinel
+        // "scansione già eseguita, nessuna annotazione presente"
+        return levelQueries;
+    }
+
+    /**
+     * Registra la query nella mappa per ciascun livello specificato, o per tutti i livelli
+     * ({@code -1}) se {@code levels} è vuoto.
+     */
+    private void registerQueryLevels(Map<Integer, RelationQuery> levelQueries,
+            RelationQuery query) {
+        if (query.levels().length == 0) {
+            // Se non sono specificati livelli, la query si applica a tutti i livelli
+            levelQueries.put(-1, query);
+        } else {
+            // Altrimenti, registra la query per ciascun livello specificato
+            for (int level : query.levels()) {
+                levelQueries.put(level, query);
+            }
         }
     }
 
@@ -131,14 +148,10 @@ public class RelationQueryExecutor implements IRelationQueryExecutor {
             int level) {
         String relationKey = childClass.getName() + "->" + parentClass.getName();
 
-        if (!queriesByRelationAndLevel.containsKey(relationKey)) {
-            loadQueryAnnotations(childClass, parentClass, relationKey);
-        }
+        queriesByRelationAndLevel.computeIfAbsent(relationKey,
+                k -> buildLevelQueryMap(childClass, parentClass));
 
         Map<Integer, RelationQuery> levelQueries = queriesByRelationAndLevel.get(relationKey);
-        if (levelQueries == null) {
-            return null;
-        }
 
         // Preferisci la query specifica per questo livello, altrimenti usa quella generica
         return levelQueries.getOrDefault(level, levelQueries.get(-1));

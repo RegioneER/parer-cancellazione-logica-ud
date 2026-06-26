@@ -457,41 +457,118 @@ class RelationQueryExecutorTest {
         }
     }
 
+    // ==================== Field-level @RelationQuery (parentClass inferita dal tipo del field)
+    // ====================
+
+    @Test
+    void hasOptimizedQueryFor_fieldLevelAnnotation_returnsTrue()
+            throws AppGenericPersistenceException {
+        // levels={} → deve essere trovata a qualsiasi livello
+        assertTrue(relationQueryExecutor.hasOptimizedQueryFor(TestChildWithFieldLevelQuery.class,
+                TestParent.class, 1));
+        assertTrue(relationQueryExecutor.hasOptimizedQueryFor(TestChildWithFieldLevelQuery.class,
+                TestParent.class, 5));
+        assertTrue(relationQueryExecutor.hasOptimizedQueryFor(TestChildWithFieldLevelQuery.class,
+                TestParent.class, 99));
+    }
+
+    @Test
+    void supportsBatchQuery_fieldLevelAnnotation_returnsTrue()
+            throws AppGenericPersistenceException {
+        assertTrue(relationQueryExecutor.supportsBatchQuery(TestChildWithFieldLevelQuery.class,
+                TestParent.class, 1));
+    }
+
+    @Test
+    void executeQueryForRelationBatch_fieldLevelAnnotation_success() throws Exception {
+        // Arrange
+        Class<?> childClass = TestChildWithFieldLevelQuery.class;
+        Class<?> parentClass = TestParent.class;
+        Field childIdField = TestChildNoQuery.class.getDeclaredField("id");
+        Field parentField = TestChildNoQuery.class.getDeclaredField("parent");
+        List<Object> parentIds = Arrays.asList(200L, 201L);
+        int level = 3; // livello arbitrario — levels={} deve accettarlo
+
+        when(rootEntityContext.getCurrentRootId()).thenReturn(rootId);
+        when(entityManager.createQuery(anyString())).thenReturn(mockQuery);
+        when(mockQuery.setParameter(anyString(), any())).thenReturn(mockQuery);
+        when(mockQuery.setHint(anyString(), any())).thenReturn(mockQuery);
+
+        Object[] row1 = new Object[] {
+                300L, 200L };
+        Object[] row2 = new Object[] {
+                301L, 201L };
+        when(mockQuery.getResultStream()).thenReturn(Stream.of(row1, row2));
+
+        // Act
+        try (Stream<EntityNode> result = relationQueryExecutor.executeQueryForRelationBatch(
+                childClass, parentClass, childIdField, parentField, parentIds, level)) {
+
+            List<EntityNode> nodes = result.toList();
+
+            // Assert — parentClass inferita dal tipo del field, query eseguita correttamente
+            assertEquals(2, nodes.size());
+            assertEquals(300L, nodes.get(0).getEntityId());
+            assertEquals(301L, nodes.get(1).getEntityId());
+        }
+
+        verify(mockQuery).setParameter("parentIds", parentIds);
+        verify(mockQuery).setParameter("rootId", rootId);
+    }
+
     // ==================== Test Entities with Annotations ====================
 
-    @RelationQuery(parentClass = TestParent.class, query = "SELECT c.id, c.parent.id FROM TestChildWithSingleQuery c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
-            1 })
     static class TestChildWithSingleQuery {
         @Id
         private Long id;
+        @RelationQuery(query = "SELECT c.id, c.parent.id FROM TestChildWithSingleQuery c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
+                1 })
         @JoinColumn(name = "ID_PARENT")
         private TestParent parent;
     }
 
-    @RelationQuery(parentClass = TestParent.class, query = "SELECT c.id, c.parent.id FROM TestChildWithMultipleQueries c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
-            1 })
-    @RelationQuery(parentClass = TestParent.class, query = "SELECT c.id, c.parent.id FROM TestChildWithMultipleQueries c WHERE c.parent.id = :parentId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
-            2 })
     static class TestChildWithMultipleQueries {
         @Id
         private Long id;
+        @RelationQuery(query = "SELECT c.id, c.parent.id FROM TestChildWithMultipleQueries c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
+                1 })
+        @RelationQuery(query = "SELECT c.id, c.parent.id FROM TestChildWithMultipleQueries c WHERE c.parent.id = :parentId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {
+                2 })
         @JoinColumn(name = "ID_PARENT")
         private TestParent parent;
     }
 
-    @RelationQuery(parentClass = TestParent.class, query = "SELECT c.id, c.parent.id FROM TestChildWithGenericQuery c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {})
     static class TestChildWithGenericQuery {
         @Id
         private Long id;
+        @RelationQuery(query = "SELECT c.id, c.parent.id FROM TestChildWithGenericQuery c WHERE c.parent.id = :parentId AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", levels = {})
         @JoinColumn(name = "ID_PARENT")
         private TestParent parent;
     }
 
-    @RelationQuery(parentClass = TestParent.class, query = "SELECT c.id, c.parent.id FROM TestChildWithBatchQuery c WHERE c.parent.id IN :parentIds AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", parentIdsParam = "parentIds", levels = {
-            1 })
     static class TestChildWithBatchQuery {
         @Id
         private Long id;
+        @RelationQuery(query = "SELECT c.id, c.parent.id FROM TestChildWithBatchQuery c WHERE c.parent.id IN :parentIds AND c.root.id = :rootId", rootIdParam = "rootId", parentIdParam = "parentId", parentIdsParam = "parentIds", levels = {
+                1 })
+        @JoinColumn(name = "ID_PARENT")
+        private TestParent parent;
+    }
+
+    // ==================== Field-level @RelationQuery entity (parentClass inferita dal tipo del
+    // field) ====================
+
+    // replica del pattern AroValoreAttribDatiSpecRicDs: annotation sul field @ManyToOne,
+    // parentClass non specificata → inferita da TestParent (tipo del field parent)
+    static class TestChildWithFieldLevelQuery {
+        @Id
+        @Column(name = "ID_CHILD")
+        private Long id;
+
+        @Column(name = "ID_PARENT", insertable = false, updatable = false)
+        private Long parentId;
+
+        @RelationQuery(query = "SELECT c.id, c.parentId FROM TestChildWithFieldLevelQuery c WHERE c.parentId IN :parentIds AND c.rootId = :rootId", parentIdParam = "parentIds", parentIdsParam = "parentIds", levels = {})
         @JoinColumn(name = "ID_PARENT")
         private TestParent parent;
     }

@@ -20,17 +20,27 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Definisce una query ottimizzata per recuperare tutti i figli di una relazione parent-child. Può
- * essere ripetuta per specificare query diverse per la stessa relazione a livelli diversi.
+ * Definisce una query ottimizzata per recuperare tutti i figli di una relazione parent-child.
+ *
+ * <p>
+ * L'annotazione deve essere posta direttamente sul field {@code @ManyToOne} o {@code @OneToOne}
+ * dell'entity figlia. La {@code parentClass} è inferita automaticamente dal tipo del field,
+ * eliminando ridondanza e possibili disallineamenti.
+ *
+ * <p>
+ * <b>Annotazione singola</b>: una sola {@code @RelationQuery} sul field — si applica ai livelli
+ * specificati in {@code levels} (o a tutti se {@code levels={}}).
+ *
+ * <p>
+ * <b>Annotazioni multiple</b>: più {@code @RelationQuery} sullo stesso field (grazie a
+ * {@code @Repeatable}) — permette query diverse per livelli diversi. Java le conserva nel container
+ * {@code @RelationQueries}, che viene risolto in modo trasparente dal motore tramite
+ * {@code getAnnotationsByType}.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
+@Target(ElementType.FIELD)
 @Repeatable(RelationQueries.class)
 public @interface RelationQuery {
-    /**
-     * Classe del parent per cui questa query è ottimizzata
-     */
-    Class<?> parentClass();
 
     /**
      * Query JPQL che recupera tutti i figli di questa relazione. Usa :rootId come parametro per
@@ -55,8 +65,25 @@ public @interface RelationQuery {
     String parentIdsParam() default "parentIds";
 
     /**
-     * Livelli dell'albero a cui questa query si applica. Un array vuoto significa che si applica a
-     * tutti i livelli.
+     * Livelli dell'albero a cui questa query si applica.
+     * <ul>
+     * <li>{@code levels = {}} (default, array vuoto): la query si applica a <b>tutti i livelli</b>
+     * in cui questa relazione parent-child viene incontrata durante la visita BFS.</li>
+     * <li>{@code levels = {2}}: la query si applica <b>solo al livello 2</b>; agli altri livelli
+     * viene usata la query generata dinamicamente.</li>
+     * <li>{@code levels = {2, 4}}: la query si applica ai livelli 2 e 4.</li>
+     * </ul>
+     *
+     * <p>
+     * <b>Priorità</b>: se per la stessa relazione parent-child esistono due annotazioni, una con
+     * livello specifico e una generica ({@code levels={}}), il livello specifico ha la precedenza.
+     *
+     * <p>
+     * <b>Stessa relazione a livelli multipli</b>: se un'entity figlia compare come figlia della
+     * stessa parent a livelli diversi (es. 2 e 5), con {@code levels={}} la stessa query
+     * ottimizzata viene usata in entrambi i casi. Per query diverse per livello, è possibile
+     * definire più annotazioni {@code @RelationQuery} sullo stesso field con {@code levels}
+     * distinti.
      */
     int[] levels() default {};
 }

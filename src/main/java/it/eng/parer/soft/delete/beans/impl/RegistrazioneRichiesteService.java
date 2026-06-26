@@ -81,6 +81,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
     private static final String NON_SCARTATA_STRING = " non \u00E8 scartata";
     private static final String NON_ESISTE_STRING = " non esiste";
     private static final String NON_PUO_ESSERE_ELABORATA_STRING = " e, quindi, non pu\u00F2 essere elaborata";
+    private static final String IN_CORSO_DI_ELABORAZIONE_STRING = " \u00E8 in corso di elaborazione nella richiesta con id ";
 
     //
     private static final Logger log = LoggerFactory.getLogger(RegistrazioneRichiesteService.class);
@@ -932,7 +933,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
                 // esistente -
                 // creo record di errore
                 String dsErr = RICHIESTA_ANN_VRS_STRING + idRichiestaSacer
-                        + " di tipo CANCELLAZIONE non esiste";
+                        + " di tipo CANCELLAZIONE" + NON_ESISTE_STRING;
                 createAroErrRichSoftDelete(itemPadre, BigDecimal.ONE,
                         CostantiDB.TipoErrRichSoftDelete.ITEM_NON_ESISTE.name(), dsErr,
                         CostantiDB.TipoGravitaErrore.ERRORE.name());
@@ -1168,6 +1169,9 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
                 .isEmpty()) {
             item.setTiStatoItem(CostantiDB.StatoItemRichSoftDelete.DA_ELABORARE.name());
         }
+
+        log.debug("Progressivo errori per item {}: {}", item.getIdItemRichSoftDelete(),
+                progressivoErr - 1);
     }
 
     /**
@@ -1185,8 +1189,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
             // quella corrente
             String dsErr = UNITA_DOCUMENTARIA_STRING + ud.getCdRegistroKeyUnitaDoc() + "-"
                     + ud.getAaKeyUnitaDoc().toPlainString() + "-" + ud.getCdKeyUnitaDoc()
-                    + " \u00E8 in corso di elaborazione nella richiesta con id "
-                    + existingRich.getIdRichSoftDelete();
+                    + IN_CORSO_DI_ELABORAZIONE_STRING + existingRich.getIdRichSoftDelete();
             createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
                     CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_ELAB.name(), dsErr,
                     CostantiDB.TipoGravitaErrore.ERRORE.name());
@@ -1211,7 +1214,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
             // Richiesta di annullamento versamento già presente in un'altra richiesta di
             // cancellazione logica diversa da quella corrente
             String dsErr = getDescrizioneRichiesta(tipoRichiesta) + richAnnVrs.getCdRichAnnulVers()
-                    + " di tipo CANCELLAZIONE \u00E8 in corso di elaborazione nella richiesta con id "
+                    + " di tipo CANCELLAZIONE" + IN_CORSO_DI_ELABORAZIONE_STRING
                     + existingRich.getIdRichSoftDelete();
             createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
                     CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_ELAB.name(), dsErr,
@@ -1238,8 +1241,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
             // Richiesta di restituzione archivio già presente in un'altra richiesta di
             // cancellazione logica diversa da quella corrente
             String dsErr = getDescrizioneRichiesta(tipoRichiesta) + richRestArch.getIdRichiestaRa()
-                    + " \u00E8 in corso di elaborazione nella richiesta con id "
-                    + existingRich.getIdRichSoftDelete();
+                    + IN_CORSO_DI_ELABORAZIONE_STRING + existingRich.getIdRichSoftDelete();
             createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
                     CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_ELAB.name(), dsErr,
                     CostantiDB.TipoGravitaErrore.ERRORE.name());
@@ -1264,8 +1266,7 @@ public class RegistrazioneRichiesteService implements IRegistrazioneRichiesteSer
             // Richiesta di scarto archivistico già presente in un'altra richiesta di
             // cancellazione logica diversa da quella corrente
             String dsErr = getDescrizioneRichiesta(tipoRichiesta)
-                    + richScartoVrs.getCdRichScartoVers()
-                    + " \u00E8 in corso di elaborazione nella richiesta con id "
+                    + richScartoVrs.getCdRichScartoVers() + IN_CORSO_DI_ELABORAZIONE_STRING
                     + existingRich.getIdRichSoftDelete();
             createAroErrRichSoftDelete(item, new BigDecimal(progressivoErr++),
                     CostantiDB.TipoErrRichSoftDelete.ITEM_IN_CORSO_DI_ELAB.name(), dsErr,

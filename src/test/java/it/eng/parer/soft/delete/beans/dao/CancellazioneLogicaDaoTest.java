@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.util.*;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -118,6 +119,7 @@ class CancellazioneLogicaDaoTest {
 
     @Test
     @TestTransaction
+    @Disabled(value = "Questo test è disabilitato perché richiede uno stato specifico del database per passare. Attendere MEV40380")
     void claimUdBatchToVerify_withDifferentBatchSizes() {
         for (int size : new int[] {
                 1, 10, 100 }) {

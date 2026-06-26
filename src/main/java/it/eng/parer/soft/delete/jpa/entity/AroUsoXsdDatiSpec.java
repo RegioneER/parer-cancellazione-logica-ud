@@ -55,6 +55,9 @@ public class AroUsoXsdDatiSpec extends SoftDelete implements Serializable {
     @OneToMany(mappedBy = "aroUsoXsdDatiSpec")
     private List<AroValoreAttribDatiSpec> aroValoreAttribDatiSpecs = new ArrayList<>();
 
+    @OneToMany(mappedBy = "aroUsoXsdDatiSpec")
+    private List<AroValoreAttribDatiSpecRicDs> aroValoreAttribDatiSpecRics = new ArrayList<>();
+
     public AroUsoXsdDatiSpec() {/* Hibernate */
     }
 
@@ -76,6 +79,10 @@ public class AroUsoXsdDatiSpec extends SoftDelete implements Serializable {
 
     public List<AroValoreAttribDatiSpec> getAroValoreAttribDatiSpecs() {
         return this.aroValoreAttribDatiSpecs;
+    }
+
+    public List<AroValoreAttribDatiSpecRicDs> getAroValoreAttribDatiSpecRics() {
+        return this.aroValoreAttribDatiSpecRics;
     }
 
 }
