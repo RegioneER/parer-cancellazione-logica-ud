@@ -45,15 +45,17 @@ public class DmUdDelRichieste implements Serializable {
 
     private LocalDateTime dtCreazione;
 
-    private String tiStatoInternoRich;
+    private Long idStatoInternoRichCor;
 
-    private LocalDateTime dtUltimoAggiornamento;
+    private LocalDateTime dtEvasione;
 
     private String tiModDel;
 
     private String dsMessaggioErrore;
 
     private List<DmUdDel> dmUdDel;
+
+    private List<DmUdDelStatoRichiesta> dmUdDelStatoRichieste;
 
     public DmUdDelRichieste() {/* Hibernate */
     }
@@ -94,14 +96,14 @@ public class DmUdDelRichieste implements Serializable {
         return this.dtCreazione;
     }
 
-    @Column(name = "TI_STATO_INTERNO_RICH")
-    public String getTiStatoInternoRich() {
-        return tiStatoInternoRich;
+    @Column(name = "ID_STATO_INTERNO_RICH_COR")
+    public Long getIdStatoInternoRichCor() {
+        return idStatoInternoRichCor;
     }
 
-    @Column(name = "DT_ULTIMO_AGGIORNAMENTO")
-    public LocalDateTime getDtUltimoAggiornamento() {
-        return this.dtUltimoAggiornamento;
+    @Column(name = "DT_EVASIONE")
+    public LocalDateTime getDtEvasione() {
+        return this.dtEvasione;
     }
 
     @Column(name = "DS_MESSAGGIO_ERRORE")
@@ -112,6 +114,11 @@ public class DmUdDelRichieste implements Serializable {
     @OneToMany(mappedBy = "dmUdDelRichieste", fetch = FetchType.LAZY)
     public List<DmUdDel> getDmUdDel() {
         return dmUdDel;
+    }
+
+    @OneToMany(mappedBy = "dmUdDelRichieste", fetch = FetchType.LAZY)
+    public List<DmUdDelStatoRichiesta> getDmUdDelStatoRichieste() {
+        return dmUdDelStatoRichieste;
     }
 
 }

@@ -265,10 +265,13 @@ public class CancellazioneLogicaDao implements ICancellazioneLogicaDao {
                 SELECT dm.id_unita_doc
                 FROM dm_ud_del dm
                 JOIN dm_ud_del_richieste rich ON rich.id_ud_del_richiesta = dm.id_ud_del_richiesta
+                JOIN dm_ud_del_stato_richiesta stato
+                    ON stato.id_stato_ud_del_richiesta = rich.id_stato_interno_rich_cor
+                JOIN dm_ud_del_decod_stato_interno decod ON decod.id_decod_stato_interno = stato.id_decod_stato_interno
                 JOIN aro_item_rich_soft_delete item ON item.id_unita_doc = dm.id_unita_doc
                 WHERE (
                     (rich.ti_stato_richiesta = 'DA_EVADERE'
-                    AND rich.ti_stato_interno_rich = 'IN_ELABORAZIONE_LOGICA'
+                    AND decod.ti_stato_interno_rich = 'IN_ELABORAZIONE_LOGICA'
                     AND dm.ti_stato_ud_cancellate = 'DA_CANCELLARE'
                     AND item.ti_stato_item = 'ELABORATO')
                     OR
