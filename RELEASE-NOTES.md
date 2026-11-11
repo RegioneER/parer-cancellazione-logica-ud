@@ -1,4 +1,4 @@
-## 1.5.0 (14-08-2026)
+## 1.6.0 (11-11-2026)
 
 ### Novità: 1
-- [#40838](https://parermine.regione.emilia-romagna.it/issues/40838) Adeguamento cancellazione logica per nuova gestione stati richiesta
+- [#41393](https://parermine.regione.emilia-romagna.it/issues/41393) Adeguamento cancellazione logica per rimozione vecchia tabella dati specifici
